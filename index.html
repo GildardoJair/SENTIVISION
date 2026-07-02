@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Detector de Emociones · Webcam</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- face-api.js (fork mantenido por vladmandic, con TensorFlow.js actualizado) -->
+  <!-- Transitorio: solo alimenta expresiones/edad/género (ver nota en app.js loadModels) -->
+  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+  <!-- I1: MediaPipe FaceMesh — detección, 478 landmarks 3D, head pose, blendshapes -->
+  <script type="module" src="facemesh.js"></script>
+  <script defer src="voice.js"></script>
+  <script defer src="affect.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Detector de Emociones</h1>
+    <p class="sub">Análisis facial en tiempo real con tu webcam · 100&nbsp;% local en tu navegador</p>
+  </header>
+
+  <div class="dashboard">
+    <!-- Columna izquierda fija: lo que hay que vigilar en vivo -->
+    <section class="cam-col">
+      <div class="video-wrap">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="overlay"></canvas>
+        <div id="status" class="status">Cargando modelos…</div>
+      </div>
+
+      <div class="controls">
+        <button id="startBtn" disabled>Iniciar cámara</button>
+        <button id="stopBtn" disabled>Detener</button>
+        <label class="toggle">
+          <input type="checkbox" id="boxToggle" checked />
+          Recuadro y puntos
+        </label>
+      </div>
+
+      <div class="role-switch">
+        <span class="role-prompt">Habla ahora:</span>
+        <button id="roleCliente" class="role active">Cliente</button>
+        <button id="roleAsesor" class="role">Asesor</button>
+        <span class="mic-status" id="micStatus">🎤 micrófono inactivo</span>
+      </div>
+
+      <div class="live-readouts">
+        <div class="voice-card">
+          <span class="vc-title">Tono de voz</span>
+          <div class="vc-stats">
+            <div><span class="m-label">Pitch · f0</span><span class="m-val" id="vPitch">—</span></div>
+            <div><span class="m-label">Energía</span><span class="m-val" id="vEnergy">—</span></div>
+            <div><span class="m-label">Activación</span><span class="m-val" id="vArousal">—</span></div>
+          </div>
+          <p class="vc-note">Proxy prosódico, no es un modelo de emoción de voz.</p>
+        </div>
+
+        <div class="sat-card">
+          <div class="sat-head"><span>Satisfacción del cliente</span><span class="est">estimada</span></div>
+          <div class="sat-gauge">
+            <span class="sat-value" id="satValue">—</span>
+            <span class="sat-label" id="satLabel">esperando…</span>
+          </div>
+          <canvas id="satTimeline" width="900" height="96"></canvas>
+          <p class="sat-note">Fusión rostro + voz (cuando habla el cliente). Señal exploratoria.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Columna derecha desplazable: el detalle -->
+    <section class="data-col">
+    <aside class="panel">
+      <div class="dominant">
+        <span class="emoji" id="domEmoji">🙂</span>
+        <div>
+          <div class="dom-label" id="domLabel">—</div>
+          <div class="dom-conf" id="domConf">Esperando…</div>
+        </div>
+      </div>
+
+      <div class="metrics">
+        <div class="metric"><span class="m-label">Edad estim.</span><span class="m-val" id="mAge">—</span></div>
+        <div class="metric"><span class="m-label">Género estim.</span><span class="m-val" id="mGender">—</span></div>
+        <div class="metric"><span class="m-label">Inclinación · roll</span><span class="m-val" id="mRoll">—</span></div>
+        <div class="metric"><span class="m-label">Giro · yaw</span><span class="m-val" id="mYaw">—</span></div>
+        <div class="metric"><span class="m-label">Cabeceo · pitch</span><span class="m-val" id="mPitch">—</span></div>
+        <div class="metric"><span class="m-label">Posición rostro</span><span class="m-val" id="mPos">—</span></div>
+      </div>
+
+      <div class="affect">
+        <canvas id="circumplex" width="180" height="180"></canvas>
+        <div class="affect-vals">
+          <div class="metric"><span class="m-label">Valencia</span><span class="m-val" id="mVal">—</span></div>
+          <div class="metric"><span class="m-label">Activación · arousal</span><span class="m-val" id="mAro">—</span></div>
+          <p class="affect-note">Valencia y activación se estiman a partir de las expresiones (modelo circumplejo), no son una medición directa.</p>
+        </div>
+      </div>
+
+      <div class="metrics affect2">
+        <div class="metric metric-wide"><span class="m-label">Cuadrante</span><span class="m-val" id="mQuadrant">—</span></div>
+        <div class="metric"><span class="m-label">Afecto · 98 · Russell-Scherer</span><span class="m-val" id="mAffect98">—</span></div>
+        <div class="metric"><span class="m-label">Afecto · 38 · Paltoglou-Thelwall</span><span class="m-val" id="mAffect38">—</span></div>
+        <div class="metric"><span class="m-label">Positividad</span><span class="m-val" id="mPositivity">—</span></div>
+        <div class="metric"><span class="m-label">Atención</span><span class="m-val" id="mAttention">—</span></div>
+        <div class="metric"><span class="m-label">Rostros detectados</span><span class="m-val" id="mFaces">—</span></div>
+      </div>
+
+      <h3 class="bars-title">6 emociones · Ekman <span class="est">+ neutral</span></h3>
+      <ul id="bars" class="bars"></ul>
+
+      <p class="privacy">
+        🔒 El video nunca sale de tu equipo. Todo el procesamiento ocurre en
+        este navegador; no se sube ni se guarda ninguna imagen.
+      </p>
+    </aside>
+    <section class="moments">
+      <div class="moments-head">
+        <h3>Momentos clave</h3>
+        <span class="moments-count" id="momentsCount">0 momentos</span>
+        <button id="momentsCsvBtn" disabled>Descargar momentos (CSV)</button>
+      </div>
+      <ul id="momentsList" class="moments-list">
+        <li class="moments-empty">Aún no se detectan momentos clave. Inicia la cámara y el micrófono.</li>
+      </ul>
+    </section>
+
+    <section class="log-panel">
+    <div class="log-head">
+      <h2>Registro de emociones</h2>
+      <div class="log-actions">
+        <label class="log-interval">
+          Muestrear cada
+          <select id="intervalSel">
+            <option value="500">0.5 s</option>
+            <option value="1000" selected>1 s</option>
+            <option value="2000">2 s</option>
+            <option value="5000">5 s</option>
+          </select>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="logToggle" checked />
+          Registrar
+        </label>
+        <span class="log-count" id="logCount">0 registros</span>
+        <button id="csvBtn" disabled>Descargar CSV</button>
+        <button id="clearBtn" disabled>Limpiar</button>
+      </div>
+    </div>
+
+    <div class="log-table-wrap">
+      <table class="log-table">
+        <thead>
+          <tr><th>Hora</th><th>Emoción</th><th>Confianza</th></tr>
+        </thead>
+        <tbody id="logBody">
+          <tr class="log-empty"><td colspan="3">Aún no hay registros. Inicia la cámara para comenzar a muestrear.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="log-note">Se muestran las últimas filas; el CSV incluye la sesión completa con las 7 expresiones.</p>
+    </section>
+    </section>
+  </div>
+
+  <footer>
+    <span>Modelos: MediaPipe FaceMesh (detección/pose/atención) + FaceExpressionNet · AgeGenderNet (face-api.js)</span>
+  </footer>
+</body>
+</html>
