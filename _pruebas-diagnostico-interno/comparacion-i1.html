@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Comparación I1 · face-api vs MediaPipe FaceMesh</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .dashboard-cmp {
+      display: flex; gap: 20px; max-width: 1400px; margin: 0 auto; padding: 12px 16px;
+      flex-wrap: wrap;
+    }
+    .col-cmp { flex: 1; min-width: 380px; }
+    .col-cmp h2 { font-size: 1.05rem; margin: 0 0 2px; }
+    .col-cmp .tag { color: var(--muted); font-size: 0.78rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Comparación I1</h1>
+    <p class="sub">🟠 face-api.js (68 pts, línea base) vs 🟢 MediaPipe FaceMesh (478 pts, propuesto) — cada
+      columna con su propia cámara independiente, MISMA estructura que solo-facemesh.html (ya confirmado funcional).</p>
+  </header>
+
+  <div class="controls" style="max-width:1200px; margin:0 auto; padding: 0 16px;">
+    <button id="startBtn" disabled>Iniciar cámaras</button>
+    <button id="stopBtn" disabled>Detener</button>
+  </div>
+
+  <div class="dashboard-cmp">
+    <section class="col-cmp">
+      <h2>🟠 Línea base</h2>
+      <span class="tag">face-api.js · tinyFaceDetector + faceLandmark68Net</span>
+      <!-- MISMA estructura exacta que app.js / solo-facemesh.html -->
+      <div class="video-wrap">
+        <video id="videoL" autoplay muted playsinline></video>
+        <canvas id="overlayL"></canvas>
+      </div>
+      <div class="live-readouts">
+        <div class="voice-card">
+          <span class="vc-title">Estado</span>
+          <div class="vc-stats">
+            <div><span class="m-label">Rostro</span><span class="m-val" id="mFaceL">—</span></div>
+            <div><span class="m-label">Puntos</span><span class="m-val">68</span></div>
+            <div><span class="m-label">Roll/Yaw/Pitch</span><span class="m-val" id="mPoseL">—</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="col-cmp">
+      <h2>🟢 Propuesto (I1)</h2>
+      <span class="tag">MediaPipe FaceMesh · 478 pts 3D + matriz</span>
+      <div class="video-wrap">
+        <video id="videoR" autoplay muted playsinline></video>
+        <canvas id="overlayR"></canvas>
+      </div>
+      <div class="live-readouts">
+        <div class="voice-card">
+          <span class="vc-title">Estado</span>
+          <div class="vc-stats">
+            <div><span class="m-label">Rostro</span><span class="m-val" id="mFaceR">—</span></div>
+            <div><span class="m-label">Puntos</span><span class="m-val" id="mPtsR">—</span></div>
+            <div><span class="m-label">Roll/Yaw/Pitch</span><span class="m-val" id="mPoseR">—</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <p style="max-width:1200px; margin:16px auto; padding:0 16px; color:var(--muted); font-size:0.85rem;">
+    ⚠️ Nivel 2 (calidad de sistema en vivo), no exactitud contra verdad de referencia.
+  </p>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+  <script type="module" src="facemesh.js"></script>
+  <script defer src="comparacion-i1.js"></script>
+</body>
+</html>

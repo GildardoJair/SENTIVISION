@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Análisis de Sesión · AURA × IRIS</title>
+<style>
+:root {
+  --bg: #0f1221;
+  --panel: #1a1f37;
+  --panel-2: #202748;
+  --accent: #6c8cff;
+  --text: #e8ebff;
+  --muted: #9aa3c7;
+  --good: #4ade80;
+  --bad: #ff6b6b;
+  --asesor: #b06cff;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+  background: radial-gradient(1200px 600px at 50% -10%, #20264a, var(--bg));
+  color: var(--text);
+  min-height: 100vh;
+}
+header { text-align: center; padding: 22px 16px 6px; }
+h1 { margin: 0; font-size: 1.6rem; letter-spacing: -0.5px; }
+.sub { margin: 6px 0 0; color: var(--muted); font-size: 0.9rem; }
+
+main {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 18px 16px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.panel {
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 22px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+/* --- Carga de archivos --- */
+.upload-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 720px) { .upload-grid { grid-template-columns: 1fr; } }
+.upload-box {
+  border: 1.5px dashed rgba(255,255,255,0.18);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.upload-box.required { border-color: rgba(108,140,255,0.4); }
+.upload-box .label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+}
+.upload-box .tag {
+  font-size: 0.65rem;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 6px;
+  padding: 1px 6px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+.tag.req { color: var(--accent); border-color: var(--accent); }
+.tag.opt { color: var(--muted); }
+input[type="file"] {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.file-status { font-size: 0.78rem; color: var(--muted); min-height: 1.1em; }
+.file-status.ok { color: var(--good); }
+.file-status.err { color: var(--bad); }
+
+.empty-hint {
+  color: var(--muted);
+  font-size: 0.88rem;
+  text-align: center;
+  padding: 30px 10px;
+}
+
+/* --- Resumen --- */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.stat {
+  background: rgba(255,255,255,0.04);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.stat .s-label {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.stat .s-val { display: block; font-size: 1.25rem; font-weight: 700; margin-top: 4px; }
+.stat .s-sub { display: block; font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+.coverage-note {
+  margin: 12px 2px 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* --- Secciones con título --- */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.section-head h2 { margin: 0; font-size: 1.15rem; }
+.section-head .hint { font-size: 0.78rem; color: var(--muted); }
+
+canvas.chart { width: 100%; display: block; background: rgba(0,0,0,0.22); border-radius: 12px; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-top: 12px; font-size: 0.78rem; color: var(--muted); }
+.legend .item { display: flex; align-items: center; gap: 6px; }
+.legend .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+.tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(10,12,25,0.95);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text);
+  display: none;
+  z-index: 5;
+  min-width: 150px;
+}
+.tooltip b { color: var(--accent); }
+.chart-wrap { position: relative; }
+
+/* --- Dos columnas: distribución + cuadrante --- */
+.two-col {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 860px) { .two-col { grid-template-columns: 1fr; } }
+
+.quad-bars { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.quad-bar-row { display: flex; align-items: center; gap: 10px; font-size: 0.78rem; }
+.quad-bar-row .qlabel { flex: 0 0 150px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.quad-bar-track { flex: 1; height: 8px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden; }
+.quad-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--good)); border-radius: 999px; }
+.quad-bar-pct { flex: 0 0 40px; text-align: right; color: var(--text); font-weight: 600; }
+
+/* --- Momentos --- */
+.moments-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.moments-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--panel-2);
+  border-left: 4px solid var(--muted);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.88rem;
+  flex-wrap: wrap;
+}
+.moments-list li.pos { border-left-color: var(--good); }
+.moments-list li.neg { border-left-color: var(--bad); }
+.moments-list li .m-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.moments-list li .m-tag { font-weight: 700; }
+.moments-list li.pos .m-tag { color: var(--good); }
+.moments-list li.neg .m-tag { color: var(--bad); }
+.moments-list li .m-detail { color: var(--muted); margin-left: auto; text-align: right; }
+
+.privacy {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.5;
+  text-align: center;
+}
+footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-size: 0.78rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Análisis de Sesión</h1>
+  <p class="sub">AURA BUAP × IRIS UDLAP · dashboard de una sesión individual · 100&nbsp;% local en tu navegador</p>
+</header>
+
+<main>
+
+  <section class="panel">
+    <div class="section-head">
+      <h2>Cargar datos de la sesión</h2>
+      <span class="hint">Nada se sube a ningún servidor — los archivos se leen directamente en tu navegador.</span>
+    </div>
+    <div class="upload-grid">
+      <div class="upload-box required">
+        <span class="label">Registro de emociones <span class="tag req">requerido</span></span>
+        <input type="file" id="fileEmociones" accept=".csv" />
+        <span class="file-status" id="statusEmociones">Esperando archivo (emociones_*.csv)…</span>
+      </div>
+      <div class="upload-box">
+        <span class="label">Momentos clave <span class="tag opt">opcional</span></span>
+        <input type="file" id="fileMomentos" accept=".csv" />
+        <span class="file-status" id="statusMomentos">Esperando archivo (momentos_clave_*.csv)…</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="emptyState">
+    <p class="empty-hint">Carga el CSV de registro de emociones que exporta la app (botón «Descargar CSV») para ver el análisis de la sesión. Si además cargas el CSV de momentos clave, se cruzarán ambos: los momentos aparecerán marcados sobre la línea de tiempo y listados abajo.</p>
+  </section>
+
+  <div id="dashboard" style="display:none; flex-direction:column; gap:20px;">
+
+    <section class="panel">
+      <div class="section-head"><h2>Resumen de la sesión</h2></div>
+      <div class="summary-grid" id="summaryGrid"></div>
+      <p class="coverage-note" id="coverageNote"></p>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <h2>Línea de tiempo de satisfacción</h2>
+        <span class="hint">satEMA por muestra, con momentos clave marcados</span>
+      </div>
+      <div class="chart-wrap">
+        <canvas class="chart" id="satChart" height="260"></canvas>
+        <div class="tooltip" id="satTooltip"></div>
+      </div>
+      <div class="legend">
+        <span class="item"><span class="sw" style="background:var(--accent)"></span> Satisfacción (satEMA)</span>
+        <span class="item"><span class="sw" style="background:var(--good)"></span> Momento positivo</span>
+        <span class="item"><span class="sw" style="background:var(--bad)"></span> Momento negativo</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <h2>Distribución de emociones en el tiempo</h2>
+        <span class="hint">probabilidades de las 7 clases, apiladas</span>
+      </div>
+      <canvas class="chart" id="emoChart" height="240"></canvas>
+      <div class="legend" id="emoLegend"></div>
+    </section>
+
+    <section class="panel two-col">
+      <div>
+        <div class="section-head"><h2>Recorrido en el cuadrante afectivo</h2></div>
+        <canvas class="chart" id="circChart" width="360" height="360" style="width:100%; max-width:380px; aspect-ratio:1/1;"></canvas>
+        <p class="coverage-note">Cada punto es una muestra (valencia, activación); el trazo más claro es el inicio de la sesión y el más intenso el final.</p>
+      </div>
+      <div>
+        <div class="section-head"><h2>Tiempo por cuadrante</h2></div>
+        <div class="quad-bars" id="quadBars"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <h2>Momentos clave</h2>
+        <span class="hint" id="momentsHint"></span>
+      </div>
+      <ul class="moments-list" id="momentsList"></ul>
+    </section>
+
+  </div>
+
+  <p class="privacy">🔒 El análisis ocurre por completo en tu navegador. Los CSVs no se suben ni se guardan en ningún servidor.</p>
+</main>
+
+<footer>Dashboard de sesión única · AURA BUAP × IRIS UDLAP</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------------
+  // Config: mismas 7 clases de emoción y colores consistentes con app.js
+  // ---------------------------------------------------------------------
+  const EMOTION_KEYS = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
+  const EMOTION_LABELS = {
+    neutral: "Neutral", happy: "Feliz", sad: "Triste", angry: "Enojo",
+    fearful: "Miedo", disgusted: "Disgusto", surprised: "Sorpresa",
+  };
+  const EMOTION_COLORS = {
+    neutral: "#9aa3c7", happy: "#4ade80", sad: "#5b8dee", angry: "#ff6b6b",
+    fearful: "#b06cff", disgusted: "#ffb454", surprised: "#43d9ff",
+  };
+
+  let emoRows = [];   // filas parseadas del CSV de emociones
+  let momRows = [];   // filas parseadas del CSV de momentos (opcional)
+  let sessionStartMs = null;
+
+  const $ = (id) => document.getElementById(id);
+
+  // ---------------------------------------------------------------------
+  // Parser de CSV genérico (soporta comillas, comas dentro de campos y
+  // el escape "" que usa saveCSV() en app.js). Asume UTF-8 con BOM.
+  // ---------------------------------------------------------------------
+  function parseCSV(text) {
+    const rows = [];
+    let field = "", row = [], inQuotes = false;
+    const len = text.length;
+    for (let i = 0; i < len; i++) {
+      const c = text[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (text[i + 1] === '"') { field += '"'; i++; } else { inQuotes = false; }
+        } else {
+          field += c;
+        }
+      } else if (c === '"') {
+        inQuotes = true;
+      } else if (c === ",") {
+        row.push(field); field = "";
+      } else if (c === "\r") {
+        // ignorar, \n cierra la fila
+      } else if (c === "\n") {
+        row.push(field); rows.push(row); row = []; field = "";
+      } else {
+        field += c;
+      }
+    }
+    if (field.length || row.length) { row.push(field); rows.push(row); }
+    if (rows.length && rows[0].length) rows[0][0] = rows[0][0].replace(/^\uFEFF/, "");
+    return rows.filter((r) => r.length > 1 || (r.length === 1 && r[0] !== ""));
+  }
+
+  function rowsToObjects(rows) {
+    if (rows.length < 2) return [];
+    const header = rows[0];
+    const out = [];
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      const obj = {};
+      for (let j = 0; j < header.length; j++) obj[header[j]] = r[j] !== undefined ? r[j] : "";
+      out.push(obj);
+    }
+    return out;
+  }
+
+  const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
+
+  function readFileText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error || new Error("No se pudo leer el archivo"));
+      reader.readAsText(file, "utf-8");
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Carga de archivos
+  // ---------------------------------------------------------------------
+  $("fileEmociones").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    const statusEl = $("statusEmociones");
+    if (!file) return;
+    try {
+      const text = await readFileText(file);
+      const rows = rowsToObjects(parseCSV(text));
+      const parsed = rows
+        .map((r) => normalizeEmoRow(r))
+        .filter((r) => r.t instanceof Date && !isNaN(r.t));
+      parsed.sort((a, b) => a.t - b.t);
+      if (parsed.length === 0) throw new Error("El archivo no tiene filas válidas de emociones_*.csv");
+      emoRows = parsed;
+      statusEl.textContent = `✓ ${parsed.length} muestras cargadas de "${file.name}"`;
+      statusEl.className = "file-status ok";
+      tryRender();
+    } catch (err) {
+      console.error(err);
+      statusEl.textContent = "✗ " + err.message;
+      statusEl.className = "file-status err";
+    }
+  });
+
+  $("fileMomentos").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    const statusEl = $("statusMomentos");
+    if (!file) return;
+    try {
+      const text = await readFileText(file);
+      const rows = rowsToObjects(parseCSV(text));
+      const parsed = rows
+        .map((r) => normalizeMomRow(r))
+        .filter((r) => r.t instanceof Date && !isNaN(r.t));
+      parsed.sort((a, b) => a.t - b.t);
+      if (parsed.length === 0) throw new Error("El archivo no tiene filas válidas de momentos_clave_*.csv");
+      momRows = parsed;
+      statusEl.textContent = `✓ ${parsed.length} momentos cargados de "${file.name}"`;
+      statusEl.className = "file-status ok";
+      tryRender();
+    } catch (err) {
+      console.error(err);
+      statusEl.textContent = "✗ " + err.message;
+      statusEl.className = "file-status err";
+    }
+  });
+
+  function normalizeEmoRow(r) {
+    const t = new Date(r["timestamp_iso"]);
+    const out = {
+      t,
+      dominant: r["emocion_dominante"] || "",
+      confidence: num(r["confianza"]),
+      valencia: num(r["valencia"]),
+      arousal: num(r["arousal"]),
+      satisfaccion: num(r["satisfaccion"]),
+      rol: r["rol_activo"] || "",
+      cuadrante: r["cuadrante"] || "",
+      nRostros: num(r["n_rostros"]),
+    };
+    for (const k of EMOTION_KEYS) out[k] = num(r[k]) || 0;
+    return out;
+  }
+
+  function normalizeMomRow(r) {
+    return {
+      t: new Date(r["timestamp_iso"]),
+      tipo: (r["tipo"] || "").indexOf("insatis") === 0 ? "neg" : (r["tipo"] === "satisfaccion" ? "pos" : (r["tipo"] || "").toLowerCase().indexOf("neg") >= 0 ? "neg" : "pos"),
+      trigger: r["disparador"] || "",
+      sat: num(r["satisfaccion"]),
+      emotion: r["emocion"] || "",
+      rol: r["rol"] || "",
+      pitch: num(r["pitch_hz"]),
+    };
+  }
+
+  // ---------------------------------------------------------------------
+  // Utilidades numéricas
+  // ---------------------------------------------------------------------
+  function median(arr) {
+    if (!arr.length) return 0;
+    const s = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  }
+
+  function fmtDuration(sec) {
+    sec = Math.max(0, Math.round(sec));
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m ${String(s).padStart(2, "0")}s`;
+    return `${m}m ${String(s).padStart(2, "0")}s`;
+  }
+
+  function fmtElapsed(sec) {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
+  // ---------------------------------------------------------------------
+  // Render principal
+  // ---------------------------------------------------------------------
+  function tryRender() {
+    if (emoRows.length === 0) return;
+    $("emptyState").style.display = "none";
+    $("dashboard").style.display = "flex";
+    sessionStartMs = emoRows[0].t.getTime();
+
+    renderSummary();
+    renderSatChart();
+    renderEmoChart();
+    renderCircChart();
+    renderQuadBars();
+    renderMoments();
+  }
+
+  function renderSummary() {
+    const n = emoRows.length;
+    const first = emoRows[0].t, last = emoRows[n - 1].t;
+    const durationSec = (last - first) / 1000;
+
+    const deltas = [];
+    for (let i = 1; i < n; i++) deltas.push((emoRows[i].t - emoRows[i - 1].t) / 1000);
+    const medDelta = median(deltas.filter((d) => d > 0));
+    const expected = medDelta > 0 ? durationSec / medDelta + 1 : n;
+    const coveragePct = Math.max(0, Math.min(100, (n / Math.max(expected, 1)) * 100));
+    const gapThreshold = medDelta > 0 ? medDelta * 3 : Infinity;
+    const gapCount = deltas.filter((d) => d > gapThreshold).length;
+
+    const satVals = emoRows.map((r) => r.satisfaccion).filter((v) => v !== null);
+    const avgSat = satVals.length ? satVals.reduce((a, b) => a + b, 0) / satVals.length : null;
+    const finalSat = satVals.length ? satVals[satVals.length - 1] : null;
+
+    // Emoción predominante = mayor probabilidad promedio en la sesión.
+    const emoAvg = {};
+    for (const k of EMOTION_KEYS) {
+      const vals = emoRows.map((r) => r[k]);
+      emoAvg[k] = vals.reduce((a, b) => a + b, 0) / n;
+    }
+    let topEmo = EMOTION_KEYS[0];
+    for (const k of EMOTION_KEYS) if (emoAvg[k] > emoAvg[topEmo]) topEmo = k;
+
+    const momPos = momRows.filter((m) => m.tipo === "pos").length;
+    const momNeg = momRows.filter((m) => m.tipo === "neg").length;
+
+    const stats = [
+      { label: "Duración de sesión", val: fmtDuration(durationSec), sub: `${first.toLocaleTimeString("es-MX")} — ${last.toLocaleTimeString("es-MX")}` },
+      { label: "Muestras registradas", val: String(n), sub: medDelta ? `~1 cada ${medDelta.toFixed(1)}s` : "" },
+      { label: "Cobertura estimada", val: coveragePct.toFixed(0) + "%", sub: gapCount ? `${gapCount} posible(s) corte(s)` : "sin cortes detectados" },
+      { label: "Emoción predominante", val: EMOTION_LABELS[topEmo], sub: `prob. media ${(emoAvg[topEmo] * 100).toFixed(0)}%` },
+      { label: "Satisfacción promedio", val: avgSat !== null ? (avgSat >= 0 ? "+" : "") + avgSat.toFixed(2) : "—", sub: "satEMA" },
+      { label: "Satisfacción final", val: finalSat !== null ? (finalSat >= 0 ? "+" : "") + finalSat.toFixed(2) : "—", sub: "" },
+      { label: "Momentos positivos", val: String(momPos), sub: momRows.length ? "" : "carga momentos_clave_*.csv" },
+      { label: "Momentos negativos", val: String(momNeg), sub: "" },
+    ];
+
+    $("summaryGrid").innerHTML = stats.map((s) => `
+      <div class="stat">
+        <span class="s-label">${s.label}</span>
+        <span class="s-val">${s.val}</span>
+        <span class="s-sub">${s.sub || ""}</span>
+      </div>`).join("");
+
+    $("coverageNote").textContent =
+      "Nota: el CSV solo registra muestras cuando la app detecta un rostro, así que la " +
+      "\u201ccobertura estimada\u201d compara el número de muestras contra las esperadas según el " +
+      "intervalo de muestreo inferido — es una aproximación, no el detection_rate exacto de metrics.js (I4).";
+  }
+
+  // --- Canvas helpers: escala por devicePixelRatio para que se vea nítido ---
+  function setupCanvas(canvas, cssHeight) {
+    const dpr = window.devicePixelRatio || 1;
+    const cssWidth = canvas.parentElement.clientWidth || canvas.clientWidth || 600;
+    canvas.style.width = cssWidth + "px";
+    canvas.style.height = cssHeight + "px";
+    canvas.width = Math.round(cssWidth * dpr);
+    canvas.height = Math.round(cssHeight * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, W: cssWidth, H: cssHeight };
+  }
+
+  // ---------------------------------------------------------------------
+  // Línea de tiempo de satisfacción
+  // ---------------------------------------------------------------------
+  let satLayout = null; // guardamos escalas para el tooltip
+
+  function renderSatChart() {
+    const canvas = $("satChart");
+    const { ctx, W, H } = setupCanvas(canvas, 260);
+    ctx.clearRect(0, 0, W, H);
+
+    const padL = 40, padR = 14, padT = 14, padB = 26;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const durationSec = (emoRows[emoRows.length - 1].t - emoRows[0].t) / 1000 || 1;
+
+    const xFor = (sec) => padL + (sec / durationSec) * plotW;
+    const yFor = (s) => padT + plotH / 2 - (s * (plotH / 2 - 6));
+
+    // Ejes
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, yFor(0)); ctx.lineTo(W - padR, yFor(0)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB); ctx.stroke();
+
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "right";
+    [1, 0.5, 0, -0.5, -1].forEach((v) => {
+      ctx.fillText(v.toFixed(1), padL - 6, yFor(v) + 3);
+    });
+    ctx.textAlign = "center";
+    const nTicks = Math.min(6, Math.max(2, Math.round(durationSec / 60)));
+    for (let i = 0; i <= nTicks; i++) {
+      const sec = (durationSec * i) / nTicks;
+      ctx.fillText(fmtElapsed(sec), xFor(sec), H - 8);
+    }
+
+    // Curva de satisfacción
+    ctx.strokeStyle = "#6c8cff";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    let started = false;
+    for (const r of emoRows) {
+      if (r.satisfaccion === null) continue;
+      const secElapsed = (r.t - emoRows[0].t) / 1000;
+      const x = xFor(secElapsed), y = yFor(r.satisfaccion);
+      if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
+    }
+    ctx.stroke();
+
+    // Marcadores de momentos clave
+    for (const m of momRows) {
+      const secElapsed = (m.t - emoRows[0].t) / 1000;
+      if (secElapsed < 0 || secElapsed > durationSec) continue;
+      const s = m.sat !== null ? m.sat : 0;
+      ctx.fillStyle = m.tipo === "pos" ? "#4ade80" : "#ff6b6b";
+      ctx.beginPath();
+      ctx.arc(xFor(secElapsed), yFor(s), 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.6)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    satLayout = { xFor, yFor, padL, padR, padT, padB, plotW, plotH, durationSec, W, H };
+    attachSatTooltip(canvas);
+  }
+
+  function attachSatTooltip(canvas) {
+    const tooltip = $("satTooltip");
+    canvas.onmousemove = (evt) => {
+      if (!satLayout) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = evt.clientX - rect.left;
+      const sec = ((x - satLayout.padL) / satLayout.plotW) * satLayout.durationSec;
+      if (sec < 0 || sec > satLayout.durationSec) { tooltip.style.display = "none"; return; }
+      const targetMs = emoRows[0].t.getTime() + sec * 1000;
+      let nearest = emoRows[0], bestDiff = Infinity;
+      for (const r of emoRows) {
+        const diff = Math.abs(r.t.getTime() - targetMs);
+        if (diff < bestDiff) { bestDiff = diff; nearest = r; }
+      }
+      const secElapsed = (nearest.t - emoRows[0].t) / 1000;
+      tooltip.innerHTML =
+        `<b>${fmtElapsed(secElapsed)}</b><br>` +
+        `Satisfacción: ${nearest.satisfaccion !== null ? nearest.satisfaccion.toFixed(2) : "—"}<br>` +
+        `Emoción: ${nearest.dominant || "—"}<br>` +
+        `Rol activo: ${nearest.rol || "—"}`;
+      tooltip.style.display = "block";
+      tooltip.style.left = Math.min(x + 12, canvas.clientWidth - 160) + "px";
+      tooltip.style.top = "6px";
+    };
+    canvas.onmouseleave = () => { tooltip.style.display = "none"; };
+  }
+
+  // ---------------------------------------------------------------------
+  // Distribución de emociones (stacked area)
+  // ---------------------------------------------------------------------
+  function renderEmoChart() {
+    const canvas = $("emoChart");
+    const { ctx, W, H } = setupCanvas(canvas, 240);
+    ctx.clearRect(0, 0, W, H);
+
+    const padL = 34, padR = 14, padT = 10, padB = 24;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const durationSec = (emoRows[emoRows.length - 1].t - emoRows[0].t) / 1000 || 1;
+    const xFor = (sec) => padL + (sec / durationSec) * plotW;
+    const yFor = (frac) => padT + plotH - frac * plotH;
+
+    // Downsample si hay demasiadas muestras, para que el relleno se vea limpio.
+    const maxPoints = 400;
+    const pts = downsample(emoRows, maxPoints);
+
+    // Construir capas acumuladas
+    let cum = pts.map(() => 0);
+    for (const key of EMOTION_KEYS) {
+      ctx.fillStyle = EMOTION_COLORS[key];
+      ctx.beginPath();
+      for (let i = 0; i < pts.length; i++) {
+        const secElapsed = (pts[i].t - emoRows[0].t) / 1000;
+        const x = xFor(secElapsed);
+        const y0 = yFor(cum[i]);
+        if (i === 0) ctx.moveTo(x, y0); else ctx.lineTo(x, y0);
+      }
+      for (let i = pts.length - 1; i >= 0; i--) {
+        const secElapsed = (pts[i].t - emoRows[0].t) / 1000;
+        const x = xFor(secElapsed);
+        const newCum = cum[i] + Math.max(0, pts[i][key] || 0);
+        ctx.lineTo(x, yFor(newCum));
+      }
+      ctx.closePath();
+      ctx.fill();
+      for (let i = 0; i < pts.length; i++) cum[i] += Math.max(0, pts[i][key] || 0);
+    }
+
+    // Ejes de tiempo
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "center";
+    const nTicks = Math.min(6, Math.max(2, Math.round(durationSec / 60)));
+    for (let i = 0; i <= nTicks; i++) {
+      const sec = (durationSec * i) / nTicks;
+      ctx.fillText(fmtElapsed(sec), xFor(sec), H - 8);
+    }
+    ctx.textAlign = "right";
+    ctx.fillText("100%", padL - 4, yFor(1) + 3);
+    ctx.fillText("0%", padL - 4, yFor(0) + 3);
+
+    $("emoLegend").innerHTML = EMOTION_KEYS.map((k) =>
+      `<span class="item"><span class="sw" style="background:${EMOTION_COLORS[k]}"></span> ${EMOTION_LABELS[k]}</span>`
+    ).join("");
+  }
+
+  function downsample(rows, maxPoints) {
+    if (rows.length <= maxPoints) return rows;
+    const bucketSize = Math.ceil(rows.length / maxPoints);
+    const out = [];
+    for (let i = 0; i < rows.length; i += bucketSize) {
+      const chunk = rows.slice(i, i + bucketSize);
+      const avg = { t: chunk[Math.floor(chunk.length / 2)].t };
+      for (const k of EMOTION_KEYS) {
+        avg[k] = chunk.reduce((a, r) => a + (r[k] || 0), 0) / chunk.length;
+      }
+      out.push(avg);
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------------------
+  // Recorrido en el cuadrante afectivo (circumplejo)
+  // ---------------------------------------------------------------------
+  function renderCircChart() {
+    const canvas = $("circChart");
+    const dpr = window.devicePixelRatio || 1;
+    const cssSize = Math.min(canvas.parentElement.clientWidth || 360, 380);
+    canvas.style.width = cssSize + "px";
+    canvas.style.height = cssSize + "px";
+    canvas.width = Math.round(cssSize * dpr);
+    canvas.height = Math.round(cssSize * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const W = cssSize, H = cssSize;
+    const cx = W / 2, cy = H / 2, R = W / 2 - 26;
+    ctx.clearRect(0, 0, W, H);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.18)";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy);
+    ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R);
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("activación +", cx, cy - R - 4);
+    ctx.fillText("activación −", cx, cy + R + 12);
+    ctx.textAlign = "left";
+    ctx.fillText("valencia +", cx + 6, cy - 4);
+    ctx.textAlign = "right";
+    ctx.fillText("valencia −", cx - 6, cy - 4);
+
+    const pts = emoRows.filter((r) => r.valencia !== null && r.arousal !== null);
+    const n = pts.length;
+    if (n === 0) return;
+
+    // Trazo: más transparente al inicio, más intenso al final.
+    for (let i = 1; i < n; i++) {
+      const a0 = pts[i - 1], a1 = pts[i];
+      const alpha = 0.15 + 0.6 * (i / n);
+      ctx.strokeStyle = `rgba(108,140,255,${alpha.toFixed(2)})`;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(cx + a0.valencia * R, cy - a0.arousal * R);
+      ctx.lineTo(cx + a1.valencia * R, cy - a1.arousal * R);
+      ctx.stroke();
+    }
+    // Punto inicial y final destacados.
+    const drawDot = (p, color, label) => {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(cx + p.valencia * R, cy - p.arousal * R, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.2; ctx.stroke();
+    };
+    drawDot(pts[0], "rgba(154,163,199,0.9)");
+    drawDot(pts[n - 1], "#6c8cff");
+  }
+
+  // ---------------------------------------------------------------------
+  // Tiempo por cuadrante (a partir de la columna "cuadrante" ya calculada
+  // por app.js / affect.js — evitamos reimplementar quadrantOf()).
+  // ---------------------------------------------------------------------
+  function renderQuadBars() {
+    const counts = {};
+    let total = 0;
+    for (const r of emoRows) {
+      const label = r.cuadrante || "Sin dato";
+      counts[label] = (counts[label] || 0) + 1;
+      total++;
+    }
+    const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    $("quadBars").innerHTML = entries.map(([label, count]) => {
+      const pct = total ? (count / total) * 100 : 0;
+      return `
+        <div class="quad-bar-row">
+          <span class="qlabel" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+          <span class="quad-bar-track"><span class="quad-bar-fill" style="width:${pct.toFixed(1)}%"></span></span>
+          <span class="quad-bar-pct">${pct.toFixed(0)}%</span>
+        </div>`;
+    }).join("") || '<p class="coverage-note">Sin datos de cuadrante en el CSV.</p>';
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  // ---------------------------------------------------------------------
+  // Lista de momentos clave
+  // ---------------------------------------------------------------------
+  function renderMoments() {
+    const hintEl = $("momentsHint");
+    const listEl = $("momentsList");
+    if (momRows.length === 0) {
+      hintEl.textContent = "Carga momentos_clave_*.csv para ver el listado.";
+      listEl.innerHTML = '<li style="justify-content:center; border-left-color:transparent; color:var(--muted);">Sin datos de momentos clave.</li>';
+      return;
+    }
+    hintEl.textContent = `${momRows.length} momento(s) detectados en la sesión`;
+    listEl.innerHTML = momRows.map((m) => {
+      const secElapsed = (m.t - emoRows[0].t) / 1000;
+      const tag = m.tipo === "pos" ? "● Satisfacción" : "● Insatisfacción";
+      return `<li class="${m.tipo}">
+        <span class="m-time">${fmtElapsed(Math.max(0, secElapsed))}</span>
+        <span class="m-tag">${tag}</span>
+        <span class="m-detail">${escapeHtml(m.trigger)} · ${escapeHtml(m.emotion)} · ${escapeHtml(m.rol)}</span>
+      </li>`;
+    }).join("");
+  }
+
+  // Re-renderizar en resize para que los canvas se ajusten al ancho.
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (emoRows.length) tryRender(); }, 150);
+  });
+})();
+</script>
+</body>
+</html>

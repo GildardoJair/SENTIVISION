@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inspección · Human.face.emotion</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Inspección — Human.face.emotion (Paso 2, previo)</h1>
+    <p class="sub">No es la comparación final. Solo queremos ver la forma REAL del objeto que devuelve
+      Human antes de asumir que son 7 categorías compatibles con Ekman. cacheSensitivity: 0 aplicado desde
+      el inicio (mismo fix que ya usamos en I5 para edad).</p>
+  </header>
+
+  <div class="dashboard">
+    <section class="cam-col">
+      <div class="video-wrap">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="overlay"></canvas>
+        <div id="status" class="status">Cargando Human…</div>
+      </div>
+
+      <div class="controls">
+        <button id="startBtn" disabled>Iniciar cámara</button>
+        <button id="stopBtn" disabled>Detener</button>
+      </div>
+
+      <div class="live-readouts">
+        <div class="voice-card">
+          <span class="vc-title">Rostro</span>
+          <div class="vc-stats">
+            <div><span class="m-label">Detectado</span><span class="m-val" id="mFace">—</span></div>
+            <div><span class="m-label">Claves en face.*</span><span class="m-val" id="mKeys">—</span></div>
+          </div>
+          <p class="vc-note">También se imprime en la consola del navegador (F12) cada ~1s, sin recortar.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="data-col">
+      <aside class="panel">
+        <h3 class="bars-title">face.emotion — objeto crudo (JSON.stringify)</h3>
+        <pre id="rawEmotion" style="white-space:pre-wrap; word-break:break-all; background:rgba(0,0,0,0.3); padding:14px; border-radius:10px; font-size:0.82rem; max-height:420px; overflow:auto;">—</pre>
+
+        <h3 class="bars-title">face.gender / face.age (referencia, ya probados en I5)</h3>
+        <pre id="rawRef" style="white-space:pre-wrap; background:rgba(0,0,0,0.3); padding:14px; border-radius:10px; font-size:0.82rem;">—</pre>
+      </aside>
+    </section>
+  </div>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/human/dist/human.js"></script>
+  <script defer src="explorar-human-emotion.js"></script>
+</body>
+</html>

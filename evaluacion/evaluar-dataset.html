@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Evaluación offline (Nivel 1) · RAF-DB</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* Estilos propios de esta página, no tocan style.css compartido. */
+    .eval-wrap { max-width: 1100px; margin: 0 auto; padding: 8px 16px 40px; }
+    .step-panel { margin-bottom: 18px; }
+    .step-panel h3 { margin-top: 0; }
+    .file-input-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .class-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 12px; }
+    .class-chip { background: rgba(255,255,255,0.04); border-radius: 10px; padding: 8px 12px; font-size: 0.85rem; }
+    .class-chip .n { font-weight: 700; font-size: 1.1rem; display:block; }
+    .config-row { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; margin-top: 14px; }
+    .config-row label { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; color: var(--muted); }
+    .config-row input[type="number"] {
+      width: 80px; background: var(--panel); color: var(--text);
+      border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 6px 8px;
+    }
+    .progress-wrap { margin-top: 16px; }
+    .progress-track { height: 14px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden; }
+    .progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--good)); transition: width 0.15s ease; }
+    .progress-text { margin-top: 6px; font-size: 0.85rem; color: var(--muted); }
+    .motor-result { margin-bottom: 26px; }
+    .motor-result h3 { display: flex; align-items: center; gap: 10px; }
+    .cm-table, .cls-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 10px; }
+    .cm-table th, .cm-table td, .cls-table th, .cls-table td {
+      border: 1px solid rgba(255,255,255,0.08); padding: 5px 7px; text-align: center;
+    }
+    .cm-table th { background: #232a4d; font-weight: 600; }
+    .cm-table td.diag { background: rgba(74,222,128,0.15); font-weight: 700; }
+    .cm-table td.miss { color: var(--muted); }
+    .cls-table th { background: #232a4d; }
+    .summary-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 10px; margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Evaluación offline · Nivel 1 (RAF-DB)</h1>
+    <p class="sub">Corre los 3 motores contra el conjunto de imágenes etiquetadas de RAF-DB, 100% en tu
+      navegador — nada se sube a ningún servidor. No toca app.js, facemesh.js, ni emotion-fusion.js.</p>
+  </header>
+
+  <div class="eval-wrap">
+    <section class="panel step-panel">
+      <h3>1. Selecciona la carpeta de imágenes</h3>
+      <p class="vc-note">
+        Elige la carpeta <code>DATASET/test</code> (recomendado — así los resultados son comparables con
+        benchmarks publicados de RAF-DB). Debe contener subcarpetas <code>1</code> a <code>7</code>, una por
+        emoción, tal como confirmamos en tu <code>tree</code>.
+      </p>
+      <div class="file-input-row">
+        <input type="file" id="folderInput" webkitdirectory directory multiple />
+        <span id="folderStatus" class="vc-note">Ninguna carpeta seleccionada.</span>
+      </div>
+      <div id="classSummary" class="class-summary"></div>
+    </section>
+
+    <section class="panel step-panel">
+      <h3>2. Configura la corrida</h3>
+      <div class="config-row">
+        <label>Imágenes por clase (0 = todas)
+          <input type="number" id="perClassInput" value="30" min="0" step="10" />
+        </label>
+        <label><input type="checkbox" id="chkFaceapi" checked /> faceExpressionNet</label>
+        <label><input type="checkbox" id="chkFusion" checked /> emotion-fusion.js</label>
+        <label><input type="checkbox" id="chkHuman" checked /> Human.face.emotion</label>
+        <label><input type="checkbox" id="chkBlendshapes" /> Exportar 52 blendshapes (ML)</label>
+      </div>
+      <p class="vc-note" style="margin-top:8px;">
+        Para extraer el CSV de entrenamiento (I2 / modelo propio) sobre <code>DATASET/train</code>,
+        desmarca faceExpressionNet y Human.face.emotion (son lentos y no se necesitan para esto) y deja
+        solo "Exportar 52 blendshapes". Reusa la misma detección de FaceMesh que emotion-fusion.js, así
+        que no hay costo extra si ambos están activos.
+      </p>
+      <div class="controls" style="margin-top:14px;">
+        <button id="startBtn" disabled>Iniciar evaluación</button>
+        <button id="cancelBtn" disabled>Cancelar</button>
+        <button id="csvBtn" disabled>Descargar CSV crudo (por imagen)</button>
+        <button id="blendshapesCsvBtn" disabled>Descargar CSV blendshapes (ML)</button>
+      </div>
+      <div class="progress-wrap">
+        <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+        <p class="progress-text" id="progressText">Esperando modelos y carpeta…</p>
+      </div>
+    </section>
+
+    <section id="resultsSection"></section>
+  </div>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/human/dist/human.js"></script>
+  <script defer src="emotion-fusion.js"></script>
+  <script type="module" src="facemesh-image.js"></script>
+  <script defer src="evaluar-dataset.js"></script>
+</body>
+</html>

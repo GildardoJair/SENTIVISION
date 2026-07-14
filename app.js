@@ -32,6 +32,9 @@ const statusEl  = document.getElementById("status");
 const startBtn  = document.getElementById("startBtn");
 const stopBtn   = document.getElementById("stopBtn");
 const boxToggle = document.getElementById("boxToggle");
+const compareToggle = document.getElementById("compareToggle");
+const compareCounts = document.getElementById("compareCounts");
+const fusionToggle  = document.getElementById("fusionToggle");
 const domEmoji  = document.getElementById("domEmoji");
 const domLabel  = document.getElementById("domLabel");
 const domConf   = document.getElementById("domConf");
@@ -76,6 +79,9 @@ const mAffect38   = document.getElementById("mAffect38");
 const mPositivity = document.getElementById("mPositivity");
 const mAttention  = document.getElementById("mAttention");
 const mFaces      = document.getElementById("mFaces");
+const mDetRate    = document.getElementById("mDetRate");
+const mEntropy    = document.getElementById("mEntropy");
+const mFlipRate   = document.getElementById("mFlipRate");
 
 // Umbrales de satisfacción (ajustables). Antes el sistema marcaba "satisfecho"
 // casi siempre porque face-api sobre-estima "happy"; subimos el listón y
@@ -230,6 +236,7 @@ function stopCamera() {
   setStatus("Cámara detenida.");
   micStatus.textContent = "🎤 micrófono inactivo";
   micStatus.classList.remove("on");
+  window.QualityMetrics.reset(); // I4: limpia la ventana deslizante entre sesiones
   resetMetrics();
 }
 
@@ -239,7 +246,9 @@ function resetMetrics() {
   domEmoji.textContent = "🙂";
   [mAge, mGender, mRoll, mYaw, mPitch, mPos, mVal, mAro,
    vPitch, vEnergy, vArousal,
-   mQuadrant, mAffect98, mAffect38, mPositivity, mAttention, mFaces].forEach((el) => (el.textContent = "—"));
+   mQuadrant, mAffect98, mAffect38, mPositivity, mAttention, mFaces,
+   mDetRate, mEntropy, mFlipRate].forEach((el) => (el.textContent = "—"));
+  [mDetRate, mEntropy, mFlipRate].forEach((el) => (el.style.color = "var(--text)"));
   satValue.textContent = "—";
   satLabel.textContent = "esperando…";
   drawCircumplex(0, 0);
@@ -292,8 +301,18 @@ async function detectLoop() {
 
   if (result && mesh) {
     // Camino normal: ambos pipelines detectaron al mismo rostro principal.
-    const dom    = updateEmotions(result.expressions);
-    const affect = updateAffect(result.expressions);
+
+    // I2: clasificador de fusión tardía (Blendshapes + audio). Se calcula
+    // SIEMPRE que haya blendshapes, para poder loguear ambas fuentes al CSV
+    // y comparar offline (F1/ECE, Nivel 1), sin importar cuál esté "activa".
+    const fusionProbs = (window.EmotionFusion && mesh.blendshapes)
+      ? window.EmotionFusion.classify(mesh.blendshapes, vf, activeRole)
+      : null;
+    const useFusion = fusionToggle.checked && fusionProbs;
+    const activeExpr = useFusion ? fusionProbs : result.expressions;
+
+    const dom    = updateEmotions(activeExpr);
+    const affect = updateAffect(activeExpr, /* applyHappyBias */ !useFusion);
     const pose   = mesh.pose; // I1: head pose real desde la matriz de transformación
     const pos    = computeFacePosition(mesh.box);
     updateMetrics(result, pose, pos);
@@ -301,16 +320,35 @@ async function detectLoop() {
 
     // Fusión multimodal → satisfacción del cliente.
     const sat = updateSatisfaction(affect, vf);
-    detectKeyMoment(sat, result.expressions, dom, vf);
+    detectKeyMoment(sat, activeExpr, dom, vf);
 
     if (boxToggle.checked) {
       drawBox(ctx, mesh.box, true);
       drawFaceMeshLandmarks(ctx, mesh.landmarks, overlay.width, overlay.height);
+      if (compareToggle.checked) {
+        // Comparación visual I1: 68 puntos de face-api.js (naranja) superpuestos
+        // a los 478 de MediaPipe FaceMesh (verde, ya dibujados arriba).
+        drawLandmarks68(ctx, result.landmarks, "#ffb020");
+        compareCounts.style.display = "block";
+        compareCounts.textContent =
+          `🟠 face-api.js: 68 puntos   ·   🟢 MediaPipe FaceMesh: ${mesh.landmarks.length} puntos`;
+      } else {
+        compareCounts.style.display = "none";
+      }
+    } else {
+      compareCounts.style.display = "none";
     }
-    maybeLog(dom, result.expressions, result, affect, pose, pos, vf, sat, af);
+    // I4: alimenta las métricas de calidad de Nivel 2 (Sección 5.2) con la
+    // fuente que realmente está pilotando el sistema en este frame.
+    window.QualityMetrics.update(true, activeExpr, dom.raw);
+
+    // I2: se loguean SIEMPRE ambas fuentes (baseline face-api + fusión) para
+    // poder comparar F1/ECE offline sin importar cuál esté activa hoy.
+    maybeLog(dom, result.expressions, result, affect, pose, pos, vf, sat, af, fusionProbs, useFusion);
   } else if (result) {
     // Fallback: FaceMesh no detectó a tiempo (p.ej. aún cargando o sin GPU
     // disponible). Se usa la aproximación anterior para no perder la sesión.
+    // Nota: sin mesh no hay blendshapes, así que I2 no puede correr aquí.
     const dom    = updateEmotions(result.expressions);
     const affect = updateAffect(result.expressions);
     const pose   = computeHeadPoseFallback(result.landmarks);
@@ -325,15 +363,38 @@ async function detectLoop() {
       drawBox(ctx, result.detection.box, true);
       drawLandmarks68(ctx, result.landmarks);
     }
-    maybeLog(dom, result.expressions, result, affect, pose, pos, vf, sat, af);
+    // I4: alimenta las métricas de calidad de Nivel 2 (Sección 5.2).
+    window.QualityMetrics.update(true, result.expressions, dom.raw);
+
+    maybeLog(dom, result.expressions, result, affect, pose, pos, vf, sat, af, null, false);
   } else {
     domConf.textContent = "No se detecta rostro…";
+    // I4: sin rostro cuenta como frame perdido para detection_rate.
+    window.QualityMetrics.update(false, null, null);
     // Sin rostro: la señal se desvanece lentamente hacia 0.
     pushSatSample(satEMA * 0.97);
   }
 
+  updateQualityMetricsUI();
   drawSatTimeline();
   loopId = requestAnimationFrame(detectLoop);
+}
+
+// I4: pinta el snapshot de QualityMetrics (Nivel 2, Sección 5.2) y marca en
+// rojo cuando se cruza el umbral de alerta definido en el reporte.
+function updateQualityMetricsUI() {
+  const { detectionRate, entropy, flipRate, alerts } = window.QualityMetrics.snapshot();
+  const ALERT = "#ff6b6b";
+  const NORMAL = "var(--text)";
+
+  mDetRate.textContent = detectionRate != null ? `${Math.round(detectionRate * 100)}%` : "—";
+  mDetRate.style.color = alerts.detectionRate ? ALERT : NORMAL;
+
+  mEntropy.textContent = entropy != null ? entropy.toFixed(2) : "—";
+  mEntropy.style.color = alerts.entropy ? ALERT : NORMAL;
+
+  mFlipRate.textContent = Number.isFinite(flipRate) ? `${flipRate.toFixed(1)}/s` : "—";
+  mFlipRate.style.color = alerts.flipRate ? ALERT : NORMAL;
 }
 
 // Salidas de afecto estilo MorphCast a partir de (valencia, activación).
@@ -548,8 +609,14 @@ function downloadMomentsCSV() {
 
 // Valencia y activación como promedio ponderado por las probabilidades.
 // Restamos HAPPY_BIAS a "happy" porque face-api lo sobre-estima en caras neutras.
-function updateAffect(expressions) {
-  const happyAdj = Math.max(0, (expressions.happy || 0) - HAPPY_BIAS);
+// Valencia y activación como promedio ponderado por las probabilidades.
+// applyHappyBias: SOLO debe ser true cuando "expressions" viene de
+// faceExpressionNet (face-api.js). El clasificador I2 (Blendshapes+audio) no
+// hereda ese sesgo, así que restar HAPPY_BIAS ahí sería una doble corrección.
+function updateAffect(expressions, applyHappyBias = true) {
+  const happyAdj = applyHappyBias
+    ? Math.max(0, (expressions.happy || 0) - HAPPY_BIAS)
+    : (expressions.happy || 0);
   let v = 0, a = 0;
   for (const key of Object.keys(AFFECT)) {
     const p = key === "happy" ? happyAdj : (expressions[key] || 0);
@@ -627,9 +694,10 @@ function drawBox(ctx, box, primary = true) {
   ctx.strokeRect(box.x, box.y, box.width, box.height);
 }
 
-// FALLBACK: dibuja los 68 puntos de face-api.js (solo si FaceMesh no cargó).
-function drawLandmarks68(ctx, landmarks) {
-  ctx.fillStyle = "#4ade80";
+// FALLBACK: dibuja los 68 puntos de face-api.js (solo si FaceMesh no cargó,
+// o en modo comparación superpuesto a los 478 de FaceMesh).
+function drawLandmarks68(ctx, landmarks, color = "#4ade80") {
+  ctx.fillStyle = color;
   for (const pt of landmarks.positions) {
     ctx.beginPath();
     ctx.arc(pt.x, pt.y, 1.6, 0, Math.PI * 2);
@@ -689,7 +757,7 @@ function drawCircumplex(v, a) {
 
 // --- Registro / CSV ---------------------------------------------------------
 
-function maybeLog(dom, expressions, result, affect, pose, pos, vf, sat, af) {
+function maybeLog(dom, expressions, result, affect, pose, pos, vf, sat, af, fusionProbs, usedFusion) {
   if (!logToggle.checked) return;
   const now = performance.now();
   const intervalMs = Number(intervalSel.value);
@@ -698,12 +766,24 @@ function maybeLog(dom, expressions, result, affect, pose, pos, vf, sat, af) {
 
   const expr = {};
   for (const key of Object.keys(EMOTIONS)) expr[key] = expressions[key] || 0;
+
+  // I2: distribución del clasificador de fusión (Blendshapes+audio), si corrió
+  // este frame. Se guarda SIEMPRE que exista, sin importar cuál esté activa
+  // pilotando el sistema, para poder comparar F1/ECE offline (Nivel 1).
+  let fusionExpr = null;
+  if (fusionProbs) {
+    fusionExpr = {};
+    for (const key of Object.keys(EMOTIONS)) fusionExpr[key] = fusionProbs[key] || 0;
+  }
+
   emotionLog.push({
     time: new Date(),
     dominant: dom.es,
     dominantRaw: dom.raw,
     confidence: dom.conf,
     expressions: expr,
+    fusionExpressions: fusionExpr,
+    usedFusion: !!usedFusion,
     age: result.age,
     gender: result.gender === "male" ? "Hombre" : "Mujer",
     genderProb: result.genderProbability,
@@ -726,6 +806,8 @@ function maybeLog(dom, expressions, result, affect, pose, pos, vf, sat, af) {
     positivity: af ? af.positivity : null,
     attention: af ? af.attention : null,
     faces: lastFaceCount,
+    // I4: snapshot de calidad de sistema (Nivel 2, Sección 5.2) al momento del registro.
+    quality: window.QualityMetrics.snapshot(),
   });
   renderLog();
 }
@@ -771,6 +853,8 @@ function downloadCSV() {
     "pos_x", "pos_y", "tamano",
     "voz_pitch_hz", "voz_energia", "voz_arousal", "rol_activo", "satisfaccion",
     "cuadrante", "afecto_98", "afecto_38", "positividad", "atencion", "n_rostros",
+    "detection_rate", "expression_entropy", "flip_rate",
+    "usa_fusion_i2", ...keys.map((k) => `fusion_${k}`),
   ];
   const rows = emotionLog.map((r) => {
     const cells = [
@@ -801,6 +885,11 @@ function downloadCSV() {
       r.positivity != null ? r.positivity.toFixed(4) : "",
       r.attention != null ? r.attention.toFixed(4) : "",
       r.faces,
+      r.quality && r.quality.detectionRate != null ? r.quality.detectionRate.toFixed(4) : "",
+      r.quality && r.quality.entropy != null ? r.quality.entropy.toFixed(4) : "",
+      r.quality && Number.isFinite(r.quality.flipRate) ? r.quality.flipRate.toFixed(2) : "",
+      r.usedFusion ? "1" : "0",
+      ...keys.map((k) => (r.fusionExpressions ? (r.fusionExpressions[k] || 0).toFixed(4) : "")),
     ];
     return cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",");
   });

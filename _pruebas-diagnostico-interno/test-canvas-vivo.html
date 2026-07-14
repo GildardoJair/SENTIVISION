@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Prueba mínima — ¿el canvas anima solo?</title>
+<style>
+  body { background:#0f1221; color:#e8ebff; font-family: system-ui, sans-serif; text-align:center; padding:30px; }
+  canvas { background:#000; border-radius:12px; margin-top:16px; }
+  #info { color:#9aa3c7; font-size:0.9rem; margin-top:10px; }
+  #counter { font-size:1.3rem; font-weight:700; color:#4ade80; }
+</style>
+</head>
+<body>
+  <h1>Prueba mínima de animación</h1>
+  <p>Un círculo debe moverse solo, de lado a lado, SIN que toques nada.<br/>
+     No hay cámara, no hay face-api, no hay MediaPipe — solo un canvas y requestAnimationFrame.</p>
+  <canvas id="c" width="600" height="200"></canvas>
+  <p id="info">Frame: <span id="counter">0</span></p>
+
+  <script>
+    const canvas = document.getElementById("c");
+    const ctx = canvas.getContext("2d");
+    const counterEl = document.getElementById("counter");
+    let x = 0;
+    let dir = 1;
+    let frame = 0;
+
+    function loop() {
+      frame++;
+      counterEl.textContent = frame;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      x += dir * 3;
+      if (x > canvas.width - 30 || x < 30) dir *= -1;
+
+      ctx.fillStyle = "#4ade80";
+      ctx.beginPath();
+      ctx.arc(x, 100, 25, 0, Math.PI * 2);
+      ctx.fill();
+
+      requestAnimationFrame(loop);
+    }
+    loop();
+  </script>
+</body>
+</html>

@@ -12,6 +12,10 @@
   <script type="module" src="facemesh.js"></script>
   <script defer src="voice.js"></script>
   <script defer src="affect.js"></script>
+  <!-- I4: métricas de calidad en tiempo real (detection_rate, entropy, flip_rate) -->
+  <script defer src="metrics.js"></script>
+  <!-- I2: fusión tardía Blendshapes + audio para clasificación de emociones -->
+  <script defer src="emotion-fusion.js"></script>
   <script defer src="app.js"></script>
 </head>
 <body>
@@ -36,7 +40,16 @@
           <input type="checkbox" id="boxToggle" checked />
           Recuadro y puntos
         </label>
+        <label class="toggle">
+          <input type="checkbox" id="compareToggle" />
+          Comparar 68 vs 478 pts
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="fusionToggle" />
+          I2: usar Blendshapes+audio
+        </label>
       </div>
+      <div id="compareCounts" class="status" style="display:none; position:static; text-align:left; background:none; padding:4px 0; backdrop-filter:none;"></div>
 
       <div class="role-switch">
         <span class="role-prompt">Habla ahora:</span>
@@ -104,6 +117,13 @@
         <div class="metric"><span class="m-label">Positividad</span><span class="m-val" id="mPositivity">—</span></div>
         <div class="metric"><span class="m-label">Atención</span><span class="m-val" id="mAttention">—</span></div>
         <div class="metric"><span class="m-label">Rostros detectados</span><span class="m-val" id="mFaces">—</span></div>
+      </div>
+
+      <div class="metrics affect2">
+        <div class="metric metric-wide"><span class="m-label">Calidad de sistema (Nivel 2) <span class="est">tiempo real</span></span><span class="m-val"></span></div>
+        <div class="metric"><span class="m-label">Detection rate</span><span class="m-val" id="mDetRate">—</span></div>
+        <div class="metric"><span class="m-label">Entropía expresión</span><span class="m-val" id="mEntropy">—</span></div>
+        <div class="metric"><span class="m-label">Flip rate</span><span class="m-val" id="mFlipRate">—</span></div>
       </div>
 
       <h3 class="bars-title">6 emociones · Ekman <span class="est">+ neutral</span></h3>

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Solo MediaPipe FaceMesh · 478 pts</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>MediaPipe FaceMesh</h1>
+    <p class="sub">478 puntos 3D + recuadro · estructura calcada de app.js (video nativo + overlay)</p>
+  </header>
+
+  <div class="dashboard">
+    <section class="cam-col">
+      <!-- MISMA estructura exacta que app.js: video visible + overlay encima -->
+      <div class="video-wrap">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="overlay"></canvas>
+        <div id="status" class="status">Cargando modelo…</div>
+      </div>
+
+      <div class="controls">
+        <button id="startBtn" disabled>Iniciar cámara</button>
+        <button id="stopBtn" disabled>Detener</button>
+      </div>
+
+      <div class="live-readouts">
+        <div class="voice-card">
+          <span class="vc-title">Estado</span>
+          <div class="vc-stats">
+            <div><span class="m-label">Rostro</span><span class="m-val" id="mFace">—</span></div>
+            <div><span class="m-label">Puntos</span><span class="m-val" id="mPts">—</span></div>
+            <div><span class="m-label">Roll/Yaw/Pitch</span><span class="m-val" id="mPose">—</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- I1: MediaPipe FaceMesh (mismo módulo que ya usa app.js) -->
+  <script type="module" src="facemesh.js"></script>
+  <script defer src="app-solo-facemesh.js"></script>
+</body>
+</html>
