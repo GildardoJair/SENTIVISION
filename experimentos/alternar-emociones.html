@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alternar clasificador de emociones · faceExpressionNet vs Blendshapes+voz vs Human</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Alternar clasificador de emociones — I2</h1>
+    <p class="sub">Un solo video, un solo canvas. El botón cicla entre tres motores: faceExpressionNet
+      (face-api.js, línea base), emotion-fusion.js (blendshapes de MediaPipe + voz) y Human.face.emotion
+      (@vladmandic/human). Misma estructura que alternar-i1.html / alternar-i5.html (ya confirmadas
+      funcionales).</p>
+  </header>
+
+  <div class="dashboard">
+    <section class="cam-col">
+      <div class="video-wrap">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="overlay"></canvas>
+        <div id="status" class="status">Cargando modelos…</div>
+      </div>
+
+      <div class="controls">
+        <button id="startBtn" disabled>Iniciar cámara</button>
+        <button id="stopBtn" disabled>Detener</button>
+        <button id="toggleBtn" disabled>Motor: —</button>
+      </div>
+
+      <div class="role-switch">
+        <span class="role-prompt">Habla ahora:</span>
+        <button id="roleCliente" class="role active">Cliente</button>
+        <button id="roleAsesor" class="role">Asesor</button>
+        <span class="mic-status" id="micStatus">🎤 micrófono inactivo</span>
+      </div>
+
+      <div class="live-readouts">
+        <div class="voice-card">
+          <span class="vc-title">Estado del motor activo</span>
+          <div class="vc-stats">
+            <div><span class="m-label">Motor</span><span class="m-val" id="mModel">—</span></div>
+            <div><span class="m-label">Rostro</span><span class="m-val" id="mFace">—</span></div>
+            <div><span class="m-label">Detection rate (5s)</span><span class="m-val" id="mDetRate">—</span></div>
+          </div>
+          <div class="vc-stats" style="margin-top:10px;">
+            <div><span class="m-label">Expression entropy</span><span class="m-val" id="mEntropy">—</span></div>
+            <div><span class="m-label">Fuente de audio usada</span><span class="m-val" id="mAudioUsed">—</span></div>
+          </div>
+          <p class="vc-note">
+            Nivel 2 (autorreferencial, sin ground truth). Entropía máxima ≈ 1.95 (ln 7); el reporte de
+            diagnóstico marca alerta si se mantiene &gt; 1.9 de forma constante (modelo confundido).
+          </p>
+        </div>
+
+        <div class="voice-card">
+          <span class="vc-title">Tono de voz</span>
+          <div class="vc-stats">
+            <div><span class="m-label">Pitch · f0</span><span class="m-val" id="vPitch">—</span></div>
+            <div><span class="m-label">Energía</span><span class="m-val" id="vEnergy">—</span></div>
+            <div><span class="m-label">Activación</span><span class="m-val" id="vArousal">—</span></div>
+          </div>
+          <p class="vc-note">Solo se usa dentro de emotion-fusion.js cuando el rol activo es "Cliente" (mismo criterio que computeSatisfaction en app.js).</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="data-col">
+      <aside class="panel">
+        <div class="dominant">
+          <span class="emoji" id="domEmoji">🙂</span>
+          <div>
+            <div class="dom-label" id="domLabel">—</div>
+            <div class="dom-conf" id="domConf">Esperando…</div>
+          </div>
+        </div>
+
+        <h3 class="bars-title">7 emociones · distribución del motor activo</h3>
+        <ul id="bars" class="bars"></ul>
+
+        <p class="privacy">
+          🔒 Todo el procesamiento ocurre en este navegador. Página de comparación interna — no forma parte
+          de app.js de producción.
+        </p>
+      </aside>
+
+      <section class="log-panel">
+        <div class="log-head">
+          <h2>Registro de comparación</h2>
+          <div class="log-actions">
+            <label class="log-interval">
+              Muestrear cada
+              <select id="intervalSel">
+                <option value="500">0.5 s</option>
+                <option value="1000" selected>1 s</option>
+                <option value="2000">2 s</option>
+              </select>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="logToggle" checked />
+              Registrar
+            </label>
+            <span class="log-count" id="logCount">0 registros</span>
+            <button id="csvBtn" disabled>Descargar CSV</button>
+            <button id="clearBtn" disabled>Limpiar</button>
+          </div>
+        </div>
+
+        <div class="log-table-wrap">
+          <table class="log-table">
+            <thead>
+              <tr>
+                <th>Hora</th><th>Motor</th><th>Rostro</th><th>Dominante</th>
+                <th>Confianza</th><th>Entropía</th><th>Rol</th>
+              </tr>
+            </thead>
+            <tbody id="logBody">
+              <tr class="log-empty"><td colspan="7">Aún no hay registros. Inicia la cámara para comenzar a muestrear.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="log-note">
+          El CSV incluye, además de estas columnas, las 7 probabilidades por emoción, detection_rate,
+          pitch/energía/activación de voz y si el audio se usó en ese frame — para poder filtrar por
+          "motor" y comparar fila a fila.
+        </p>
+      </section>
+    </section>
+  </div>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/human/dist/human.js"></script>
+  <script defer src="voice.js"></script>
+  <script defer src="emotion-fusion.js"></script>
+  <script type="module" src="facemesh.js"></script>
+  <script defer src="alternar-emociones.js"></script>
+</body>
+</html>

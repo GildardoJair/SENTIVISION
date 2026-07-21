@@ -1,27 +1,18 @@
-// Detector de emociones — versión integrada (I1 FaceMesh + I2 fusión + I2 MLP
-// propio + I4 métricas + edad/género vía recorte de MediaPipe).
-//
-// Motores de clasificación de emoción disponibles vía selector (classifierSel):
-//   - faceExpressionNet (face-api.js) — baseline original, con HAPPY_BIAS.
-//   - emotion-fusion.js (I2, heurístico) — Blendshapes + audio.
-//   - Modelo propio (I2, MLP) — entrenado sobre 52 blendshapes (ver notebook).
-// Las 3 fuentes se calculan y loguean SIEMPRE al CSV, sin importar cuál esté
-// activa, para poder comparar F1/ECE offline (Nivel 1) en cualquier momento.
-//
-// Detección: MediaPipe FaceMesh (I1) es el detector principal — 478 landmarks
-// 3D, head pose real, blendshapes. face-api.js (tinyFaceDetector) sigue
-// corriendo en paralelo SOLO para alimentar faceExpressionNet (opción del
-// selector), la comparación visual 68 vs 478 puntos, y como fallback si
-// MediaPipe no está listo. Edad/género: ageGenderNet, pero alimentado con el
-// recorte del box de MediaPipe (I1) en vez de tinyFaceDetector — validado
-// offline contra UTKFace (n=881 pareado): cobertura de ~33% a ~99%, MAE y
-// accuracy de género equivalentes o mejores.
-//
-// Todo el procesamiento es local en el navegador.
+// Detector de emociones — v2.1 (migración I1+I2 + edad/género sobre FaceMesh).
+// Detección facial, landmarks 3D y pose real: MediaPipe FaceMesh (facemesh.js).
+// Clasificación de emoción: modelo propio (MLP, emotion-ml.js), entrenado
+// sobre 52 blendshapes — reemplaza a faceExpressionNet de face-api.js.
+// Edad/género: ageGenderNet de face-api.js, pero alimentado con el recorte
+// del box que YA calcula MediaPipe FaceMesh (I1) — ya NO depende de
+// tinyFaceDetector. Validado offline contra UTKFace (n=881 pareado): MAE y
+// accuracy de género estadísticamente equivalentes al pipeline anterior,
+// pero con cobertura de ~33% a ~99% (tinyFaceDetector fallaba la mayoría de
+// las veces; ver reporte de diagnóstico, Hallazgo #1). Todo el procesamiento
+// es local en el navegador.
 
 const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/";
 
-// Traducción y emoji para cada expresión que devuelve cualquiera de los 3 motores.
+// Traducción y emoji para cada expresión que devuelve el modelo.
 const EMOTIONS = {
   neutral:   { es: "Neutral",  emoji: "😐" },
   happy:     { es: "Feliz",    emoji: "😄" },
@@ -33,6 +24,7 @@ const EMOTIONS = {
 };
 
 // Coordenadas en el modelo circumplejo (Russell): valencia y activación en [-1, 1].
+// Sirven para estimar valence/arousal como promedio ponderado de las expresiones.
 const AFFECT = {
   neutral:   { v:  0.0, a: -0.1 },
   happy:     { v:  0.8, a:  0.5 },
@@ -49,12 +41,6 @@ const statusEl  = document.getElementById("status");
 const startBtn  = document.getElementById("startBtn");
 const stopBtn   = document.getElementById("stopBtn");
 const boxToggle = document.getElementById("boxToggle");
-const compareToggle = document.getElementById("compareToggle");
-const compareCounts = document.getElementById("compareCounts");
-const classifierSel = document.getElementById("classifierSel");
-const cmpFaceapi = document.getElementById("cmpFaceapi");
-const cmpFusion  = document.getElementById("cmpFusion");
-const cmpMLP     = document.getElementById("cmpMLP");
 const domEmoji  = document.getElementById("domEmoji");
 const domLabel  = document.getElementById("domLabel");
 const domConf   = document.getElementById("domConf");
@@ -90,6 +76,7 @@ const satLabel      = document.getElementById("satLabel");
 const satTimeline   = document.getElementById("satTimeline");
 const momentsList   = document.getElementById("momentsList");
 const momentsCount  = document.getElementById("momentsCount");
+const momentsCsvBtn = document.getElementById("momentsCsvBtn");
 
 // Salidas de afecto (estilo MorphCast).
 const mQuadrant   = document.getElementById("mQuadrant");
@@ -98,16 +85,17 @@ const mAffect38   = document.getElementById("mAffect38");
 const mPositivity = document.getElementById("mPositivity");
 const mAttention  = document.getElementById("mAttention");
 const mFaces      = document.getElementById("mFaces");
-const mDetRate    = document.getElementById("mDetRate");
-const mEntropy    = document.getElementById("mEntropy");
-const mFlipRate   = document.getElementById("mFlipRate");
 
-// Umbrales de satisfacción. HAPPY_BIAS solo se aplica cuando el motor activo
-// es faceExpressionNet (ver updateAffect) — emotion-fusion.js y el MLP no lo
-// necesitan (el MLP ya corrige el sesgo durante el entrenamiento).
-const SAT_THRESHOLD_POS = 0.5;
-const SAT_THRESHOLD_NEG = -0.3;
-const HAPPY_BIAS = 0.15;
+// Umbrales de satisfacción (ajustables).
+// v2.0: HAPPY_BIAS se elimina — ese parche compensaba el sesgo documentado de
+// faceExpressionNet ("happy" sobre-estimado en caras neutras). El modelo
+// propio (MLP) ya corrige ese sesgo durante el entrenamiento
+// (class_weight="balanced", ver notebook) — restar el parche aquí encima
+// sub-estimaría "happy" de más. SAT_THRESHOLD_POS/NEG se mantienen igual por
+// ahora; recalibrarlos con el nuevo modelo es un pendiente aparte, no parte
+// de esta migración.
+const SAT_THRESHOLD_POS = 0.5;    // satisfecho por encima de este valor
+const SAT_THRESHOLD_NEG = -0.3;   // insatisfecho por debajo
 
 let stream = null;
 let loopId = null;
@@ -119,16 +107,16 @@ const MAX_TABLE_ROWS = 12;
 
 // --- Estado de interacción y satisfacción ---
 const voice = new VoiceAnalyzer();
-let activeRole = "cliente";
+let activeRole = "cliente";        // quién habla: "cliente" | "asesor"
 let lastFaceCount = 0;
-let satEMA = 0;
-let hasSat = false;
-const satHist = [];
+let satEMA = 0;                    // satisfacción suavizada [-1, 1]
+let hasSat = false;                // ¿ya hay señal válida?
+const satHist = [];               // { t, s, event } para la línea de tiempo
 const SAT_HIST_MAX = 900;
 
 // Detección de momentos clave.
-const momentsLog = [];
-let momentState = "neutral";
+const momentsLog = [];            // { time, type, trigger, sat, emotion, role, pitch, rms }
+let momentState = "neutral";      // "neutral" | "pos" | "neg"
 let lastMomentAt = 0;
 const MOMENT_COOLDOWN_MS = 3500;
 const MAX_MOMENT_ROWS = 30;
@@ -150,7 +138,7 @@ function buildBars() {
       val:  li.querySelector(`[data-val="${key}"]`),
     };
   }
-  drawCircumplex(0, 0);
+  drawCircumplex(0, 0); // ejes vacíos
 }
 
 function setStatus(msg) {
@@ -162,80 +150,25 @@ function withTimeout(promise, ms, label) {
   return Promise.race([
     promise,
     new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`Timeout (${ms}ms) cargando ${label}`)), ms)
+      setTimeout(() => reject(new Error(`Timeout cargando ${label} (${ms}ms)`)), ms)
     ),
   ]);
 }
 
 async function loadModels() {
   setStatus("Cargando modelos de IA…");
-
-  // face-api: se mantiene completo (detector + landmarks + expresiones +
-  // edad/género) — el detector y los landmarks alimentan el fallback y la
-  // comparación visual; expresiones alimenta la opción "faceExpressionNet"
-  // del selector; ageGenderNet se usa aparte, sobre el recorte de MediaPipe
-  // (ver cropForAgeGender), no encadenado a detectAllFaces().
-  const faceApiLoad = Promise.all([
-    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-    faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
+  // Todo en paralelo (no secuencial). face-api SOLO trae ageGenderNet ahora
+  // — tinyFaceDetector ya no se usa para nada (ageGenderNet se alimenta del
+  // recorte del box de MediaPipe, ver detectLoop/cropForAgeGender). Tampoco
+  // se cargan faceLandmark68Net ni faceExpressionNet — MediaPipe + el modelo
+  // propio los reemplazan por completo.
+  await Promise.all([
     faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
+    withTimeout(window.FaceMeshEngine.load(), 20000, "FaceMeshEngine"),
+    withTimeout(window.EmotionML.load("emotion_ml_weights.json"), 20000, "EmotionML"),
   ]);
-
-  // I1 — MediaPipe FaceMesh, en paralelo, con timeout de 20s.
-  const faceMeshLoad = withTimeout(
-    window.FaceMeshEngine.load(setStatus),
-    20000,
-    "MediaPipe FaceMesh"
-  ).catch((e) => {
-    console.error("No se pudo cargar MediaPipe FaceMesh:", e);
-    return "fallback";
-  });
-
-  // I2 — modelo propio (MLP), en paralelo también. Si falla, el selector cae
-  // de vuelta a faceExpressionNet/fusión automáticamente (ver detectLoop).
-  const emotionMLLoad = withTimeout(
-    window.EmotionML.load("emotion_ml_weights.json"),
-    20000,
-    "Modelo propio (MLP)"
-  ).catch((e) => {
-    console.error("No se pudo cargar el modelo propio (MLP):", e);
-    return "fallback";
-  });
-
-  const [, faceMeshResult] = await Promise.all([faceApiLoad, faceMeshLoad, emotionMLLoad]);
-  if (faceMeshResult === "fallback") {
-    setStatus("FaceMesh no disponible; se usará la aproximación anterior (fallback). Revisa la consola (F12).");
-    await new Promise((r) => setTimeout(r, 2500));
-  }
-
   setStatus("Modelos listos. Presiona «Iniciar cámara».");
   startBtn.disabled = false;
-}
-
-// --- Programación del loop, con respaldo para pestañas en segundo plano ----
-// Los navegadores pausan o limitan MUCHO requestAnimationFrame cuando la
-// pestaña no está visible (ahorro de batería) — por eso "se congela" el
-// registro al cambiar a otra pestaña (p.ej. un video de YouTube), aunque la
-// cámara siga técnicamente activa. No es un bug del sistema ni del
-// navegador específico (pasa en Chrome/Firefox/Safari por igual): es
-// comportamiento estándar de la Page Visibility API. El respaldo: cuando la
-// pestaña está oculta, se usa setTimeout (menos limitado) a ~5 fps — no hace
-// falta más, ya que el registro al CSV muestrea cada 1s por defecto de
-// cualquier forma, y no hay nadie viendo el overlay mientras la pestaña está
-// en segundo plano.
-function scheduleNextFrame(fn) {
-  if (document.visibilityState === "hidden") {
-    return setTimeout(fn, 200);
-  }
-  return requestAnimationFrame(fn);
-}
-
-function cancelLoop(id) {
-  // Un id de rAF y uno de setTimeout no se confunden entre sí — llamar a
-  // ambos "por si acaso" es seguro y evita tener que rastrear cuál se usó.
-  cancelAnimationFrame(id);
-  clearTimeout(id);
 }
 
 async function startCamera() {
@@ -253,6 +186,7 @@ async function startCamera() {
     setStatus("");
     sessionStart = performance.now();
 
+    // Inicia el análisis de voz si hay pista de audio.
     if (stream.getAudioTracks().length > 0) {
       try {
         await voice.start(stream);
@@ -274,7 +208,7 @@ async function startCamera() {
 }
 
 function stopCamera() {
-  if (loopId) cancelLoop(loopId);
+  if (loopId) cancelAnimationFrame(loopId);
   loopId = null;
   voice.stop();
   if (stream) stream.getTracks().forEach((t) => t.stop());
@@ -286,7 +220,6 @@ function stopCamera() {
   setStatus("Cámara detenida.");
   micStatus.textContent = "🎤 micrófono inactivo";
   micStatus.classList.remove("on");
-  window.QualityMetrics.reset();
   resetMetrics();
 }
 
@@ -296,30 +229,29 @@ function resetMetrics() {
   domEmoji.textContent = "🙂";
   [mAge, mGender, mRoll, mYaw, mPitch, mPos, mVal, mAro,
    vPitch, vEnergy, vArousal,
-   mQuadrant, mAffect98, mAffect38, mPositivity, mAttention, mFaces,
-   mDetRate, mEntropy, mFlipRate].forEach((el) => (el.textContent = "—"));
-  [mDetRate, mEntropy, mFlipRate].forEach((el) => (el.style.color = "var(--text)"));
+   mQuadrant, mAffect98, mAffect38, mPositivity, mAttention, mFaces].forEach((el) => (el.textContent = "—"));
   satValue.textContent = "—";
   satLabel.textContent = "esperando…";
   drawCircumplex(0, 0);
   resetEmotionSmoothing();
   resetAgeBuffer();
-  updateComparisonPanel(null, null, null);
 }
 
-const detectorOpts = new faceapi.TinyFaceDetectorOptions({
-  inputSize: 320,
-  scoreThreshold: 0.5,
-});
-
-// Margen de recorte para alimentar ageGenderNet con el box de MediaPipe. 60%
-// validado offline contra UTKFace (n=881 pareado) — porcentaje del tamaño
-// del box en CADA frame, no píxeles fijos, así escala con la distancia real
-// de la persona a la cámara.
+// Margen de recorte para alimentar ageGenderNet con el box de MediaPipe.
+// 60% validado offline contra UTKFace (n=881 pareado): por debajo de eso el
+// recorte queda muy ceñido a los landmarks y ageGenderNet pierde precisión
+// (se entrenó con boxes de detector clásico, más holgados). Es un porcentaje
+// del tamaño del box en CADA frame, no píxeles fijos — así escala bien sin
+// importar qué tan cerca o lejos esté la persona de la cámara.
 const AGE_GENDER_CROP_MARGIN = 0.6;
+
+// Canvas reutilizado para el recorte (evita crear uno nuevo cada frame).
 const ageGenderCropCanvas = document.createElement("canvas");
 const ageGenderCropCtx = ageGenderCropCanvas.getContext("2d");
 
+// Recorta el frame de video actual al box de MediaPipe + margen. Devuelve
+// null si el recorte resultante es demasiado pequeño (persona muy en el
+// borde del encuadre) — el llamador debe tratar eso como "sin lectura".
 function cropForAgeGender(box) {
   const vw = video.videoWidth, vh = video.videoHeight;
   const mw = box.width * AGE_GENDER_CROP_MARGIN;
@@ -338,39 +270,29 @@ function cropForAgeGender(box) {
 
 // --- Suavizado del modelo propio (EMA + histéresis) -------------------------
 // Frame a frame, dos emociones cercanas en score (ej. happy vs sad) pueden
-// intercambiar el primer lugar por ruido de un solo frame. Se suavizan las 7
-// probabilidades con una media móvil exponencial y la ETIQUETA MOSTRADA solo
-// cambia si la nueva dominante supera un umbral de confianza Y se sostiene
-// un tiempo mínimo. Se aplica SOLO al modelo propio (MLP) — es donde se
-// observó el problema; faceExpressionNet y emotion-fusion.js usan argmax
-// directo, como siempre.
-const EMOTION_EMA_ALPHA = 0.25;
-const EMOTION_SWITCH_CONFIDENCE = 0.70;
-const EMOTION_SWITCH_HOLD_MS = 600;
+// intercambiar el primer lugar por ruido de un solo frame — se ve como que
+// "tristeza gana de repente" aunque la persona esté sonriendo. Se suavizan
+// las 7 probabilidades con una media móvil exponencial (mismo mecanismo que
+// ya usa satEMA para satisfacción) y la ETIQUETA MOSTRADA solo cambia si la
+// nueva dominante supera un umbral de confianza Y se sostiene un tiempo
+// mínimo — mismo patrón que MOMENT_COOLDOWN_MS en detectKeyMoment(), aplicado
+// aquí a la emoción base en vez de a los momentos clave.
+const EMOTION_EMA_ALPHA = 0.25;          // 0-1: más alto = se adapta más rápido a cambios reales
+const EMOTION_SWITCH_CONFIDENCE = 0.70;  // confianza mínima para considerar cambiar de etiqueta
+const EMOTION_SWITCH_HOLD_MS = 600;      // la candidata debe sostenerse este tiempo antes de mostrarse
 
-let emotionEMA = null;
-let displayedEmotion = null;
-let pendingEmotion = null;
+let emotionEMA = null;        // { key: prob, ... } — probabilidades suavizadas
+let displayedEmotion = null;  // etiqueta actualmente mostrada
+let pendingEmotion = null;    // candidata a reemplazarla
 let pendingSince = 0;
 
 function smoothEmotionProbs(rawProbs) {
-  const adjustedProbs = { ...rawProbs };
-
-  // PARCHE TEMPORAL, sin calibrar todavía — pendiente de reemplazar por una
-  // corrección medida (capturar ejemplos reales de webcam, confirmar si
-  // "sad" de verdad se sobre-predice ahí, y por cuánto). En el test set de
-  // RAF-DB "sad" NO se sobre-predice (precisión 0.459, recall 0.347) — el
-  // problema reportado aparece en uso real con webcam, no en el modelo en
-  // sí, lo que apunta a domain shift (ángulo/luz de webcam vs. fotos de
-  // entrenamiento) más que a un defecto del MLP. Mientras se mide bien, se
-  // recorta "sad" y se renormaliza para que las 7 probabilidades sigan
-  // sumando 1 (la versión anterior de este parche NO renormalizaba).
+  // Clonamos para aplicar la penalización localmente
+  const adjustedProbs = { ...rawProbs }; 
+  
+  // Atenuamos la sensibilidad a la tristeza en un 25%
   if (adjustedProbs.sad !== undefined) {
-    adjustedProbs.sad *= 0.40;
-    const total = Object.values(adjustedProbs).reduce((a, b) => a + b, 0);
-    if (total > 0) {
-      for (const k of Object.keys(adjustedProbs)) adjustedProbs[k] /= total;
-    }
+    adjustedProbs.sad = adjustedProbs.sad * 0.20;
   }
 
   if (!emotionEMA) {
@@ -383,6 +305,8 @@ function smoothEmotionProbs(rawProbs) {
   return emotionEMA;
 }
 
+// Decide si la etiqueta mostrada debe cambiar, con histéresis. Devuelve la
+// key que se debe mostrar AHORA (puede seguir siendo la anterior).
 function stableDominantKey(probs) {
   let bestKey = null, bestP = -1;
   for (const [k, v] of Object.entries(probs)) if (v > bestP) { bestP = v; bestKey = k; }
@@ -393,17 +317,17 @@ function stableDominantKey(probs) {
     return displayedEmotion;
   }
   if (bestKey === displayedEmotion) {
-    pendingEmotion = null;
+    pendingEmotion = null; // se reafirma la actual, cancela cualquier candidata en curso
     return displayedEmotion;
   }
   if (bestP < EMOTION_SWITCH_CONFIDENCE) {
-    return displayedEmotion;
+    return displayedEmotion; // la candidata no es lo bastante confiable, se queda como está
   }
   const now = performance.now();
   if (pendingEmotion !== bestKey) {
     pendingEmotion = bestKey;
     pendingSince = now;
-    return displayedEmotion;
+    return displayedEmotion; // empieza a contar, todavía no cambia
   }
   if (now - pendingSince >= EMOTION_SWITCH_HOLD_MS) {
     displayedEmotion = bestKey;
@@ -418,91 +342,42 @@ function resetEmotionSmoothing() {
   pendingEmotion = null;
 }
 
-// Encuentra la clave dominante de un objeto {emocion: prob}. Se usa solo
-// para el panel de comparación en vivo — no toca la lógica de satisfacción
-// ni momentos clave, que siguen dependiendo de classifierSel como siempre.
-function dominantOf(probs) {
-  let bestKey = null, bestP = -1;
-  for (const [k, v] of Object.entries(probs)) if (v > bestP) { bestP = v; bestKey = k; }
-  return bestKey ? { key: bestKey, conf: bestP } : null;
-}
-
-// Panel de comparación en vivo — muestra los 3 motores SIMULTÁNEAMENTE,
-// aunque solo uno esté "activo" (classifierSel) para satisfacción/momentos.
-// No hace ningún cálculo nuevo: reusa faceapiExpr/fusionProbs/mlProbs que
-// detectLoop() ya calcula cada frame de todas formas (mismos datos que ya
-// se registran siempre en el CSV, columnas fusion_*/mlp_*).
-function updateComparisonPanel(faceapiExpr, fusionProbs, mlProbs) {
-  const fmt = (probs, el) => {
-    if (!probs) { el.textContent = "—"; return; }
-    const d = dominantOf(probs);
-    if (!d) { el.textContent = "—"; return; }
-    const info = EMOTIONS[d.key] || { es: d.key, emoji: "" };
-    el.textContent = `${info.emoji} ${info.es} (${Math.round(d.conf * 100)}%)`;
-  };
-  fmt(faceapiExpr, cmpFaceapi);
-  fmt(fusionProbs, cmpFusion);
-  fmt(mlProbs, cmpMLP);
-}
-
 async function detectLoop() {
   if (!stream) return;
 
-  // I1 — MediaPipe FaceMesh: detección principal, 478 landmarks 3D, head
-  // pose real, blendshapes.
-  const fm = window.FaceMeshEngine.detect(video);
-
-  // face-api.js: detección + landmarks 68 + expresiones (fallback,
-  // comparación visual, y opción "faceExpressionNet" del selector). Ya NO
-  // se le pide edad/género aquí — eso viene del recorte de MediaPipe abajo.
-  const results = await faceapi
-    .detectAllFaces(video, detectorOpts)
-    .withFaceLandmarks()
-    .withFaceExpressions();
+  // MediaPipe FaceMesh: detección principal, landmarks 3D, pose real, blendshapes.
+  const mp = window.FaceMeshEngine.detect(video);
 
   const ctx = overlay.getContext("2d");
   ctx.clearRect(0, 0, overlay.width, overlay.height);
 
+  // Voz: leemos las características más recientes (se calculan en su propio timer).
   const vf = voice.running ? voice.features : null;
   updateVoiceUI(vf);
 
-  lastFaceCount = window.FaceMeshEngine.ready ? fm.count : results.length;
-  mFaces.textContent = String(lastFaceCount);
+  // MediaPipe es el detector principal ahora (más confiable que tinyFaceDetector
+  // — ver reporte de diagnóstico); el conteo de rostros viene de aquí.
+  lastFaceCount = mp.count;
+  mFaces.textContent = String(mp.count);
 
-  let result = null;
-  if (results.length) {
-    result = results.reduce((m, r) =>
-      r.detection.box.area > m.detection.box.area ? r : m, results[0]);
-  }
-  let mesh = null;
-  if (fm.faces.length) {
-    mesh = fm.faces.reduce((m, f) => (f.box.area > m.box.area ? f : m), fm.faces[0]);
+  // Rostro principal de MediaPipe = el de mayor área.
+  let face = null;
+  if (mp.count) {
+    face = mp.faces.reduce((m, f) => (f.box.area > m.box.area ? f : m), mp.faces[0]);
   }
 
-  if (mesh) {
-    // Camino normal: MediaPipe detectó — I1 completo + selector de 3 vías.
+  if (face) {
+    // Clasificación de emoción: modelo propio (MLP), no faceExpressionNet.
+    const mlResult = window.EmotionML.classify(face.blendshapes);
 
-    // I2: las 3 fuentes se calculan SIEMPRE que haya blendshapes, para poder
-    // loguearlas todas y comparar offline (F1/ECE, Nivel 1), sin importar
-    // cuál esté "activa" pilotando el sistema en este frame.
-    const fusionProbs = (window.EmotionFusion && mesh.blendshapes)
-      ? window.EmotionFusion.classify(mesh.blendshapes, vf, activeRole)
-      : null;
-    const mlResult = (window.EmotionML && window.EmotionML.ready && mesh.blendshapes)
-      ? window.EmotionML.classify(mesh.blendshapes)
-      : null;
-
-    // Panel de comparación en vivo — los 3 motores a la vez, sin importar
-    // cuál esté "activo" abajo para satisfacción/momentos.
-    updateComparisonPanel(result ? result.expressions : null, fusionProbs, mlResult ? mlResult.probs : null);
-
-    // Edad/género: ageGenderNet sobre el recorte del box de MediaPipe. Puede
-    // fallar (recorte inválido, red no lista) sin tumbar el resto del
-    // pipeline — ageGenderResult queda null y updateMetrics()/maybeLog() ya
-    // saben mostrar "—" en ese caso.
+    // Edad/género: ageGenderNet sobre el recorte del box de MediaPipe (I1),
+    // no sobre una detección independiente de tinyFaceDetector. Puede fallar
+    // (recorte inválido, red no lista) sin tumbar el resto del pipeline —
+    // ageGenderResult queda null y updateMetrics()/maybeLog() ya saben
+    // mostrar "—" en ese caso.
     let ageGenderResult = null;
     try {
-      const crop = cropForAgeGender(mesh.box);
+      const crop = cropForAgeGender(face.box);
       if (crop) {
         const pred = await faceapi.nets.ageGenderNet.predictAgeAndGender(crop);
         ageGenderResult = Array.isArray(pred) ? pred[0] : pred;
@@ -511,106 +386,41 @@ async function detectLoop() {
       console.error("Error en predicción de edad/género:", e);
     }
 
-    // Selector de 3 vías, con fallback seguro: si la fuente elegida no está
-    // disponible este frame, cae a faceExpressionNet — nunca se queda sin
-    // predicción (si result tampoco existe, activeExpr queda null y se
-    // maneja como "sin rostro" más abajo).
-    const classifierChoice = classifierSel.value; // "faceapi" | "fusion" | "mlp"
-    let activeExpr = null, forcedDom = null, applyHappyBias = false, usedFusion = false, usedML = false;
+    if (mlResult) {
+      // Suaviza las 7 probabilidades y decide, con histéresis, si la
+      // etiqueta mostrada debe cambiar — ver bloque de suavizado arriba.
+      const smoothedProbs = smoothEmotionProbs(mlResult.probs);
+      const stableKey = stableDominantKey(smoothedProbs);
 
-    if (classifierChoice === "mlp" && mlResult) {
-      activeExpr = smoothEmotionProbs(mlResult.probs);
-      forcedDom = stableDominantKey(activeExpr);
-      usedML = true;
-    } else if (classifierChoice === "fusion" && fusionProbs) {
-      activeExpr = fusionProbs;
-      usedFusion = true;
-    } else if (result) {
-      activeExpr = result.expressions;
-      applyHappyBias = true;
-    }
-
-    if (activeExpr) {
-      const dom    = updateEmotions(activeExpr, forcedDom);
-      const affect = updateAffect(activeExpr, applyHappyBias);
-      const pose   = mesh.pose;
-      const pos    = computeFacePosition(mesh.box);
+      const dom    = updateEmotions(smoothedProbs, stableKey);
+      const affect = updateAffect(smoothedProbs);
+      const pose   = face.pose; // ya viene calculado por MediaPipe (matriz 3D real)
+      const pos    = computeFacePosition(face.box);
       updateMetrics(ageGenderResult, pose, pos);
-      const af     = updateAffectModels(affect.valence, affect.arousal, pose, mesh.blendshapes);
+      const af     = updateAffectModels(affect.valence, affect.arousal, pose, face.blendshapes);
 
+      // Fusión multimodal → satisfacción del cliente.
       const sat = updateSatisfaction(affect, vf);
-      detectKeyMoment(sat, activeExpr, dom, vf);
+      detectKeyMoment(sat, smoothedProbs, dom, vf);
 
       if (boxToggle.checked) {
-        drawBox(ctx, mesh.box, true);
-        drawFaceMeshLandmarks(ctx, mesh.landmarks, overlay.width, overlay.height);
-        if (compareToggle.checked && result) {
-          drawLandmarks68(ctx, result.landmarks, "#ffb020");
-          compareCounts.style.display = "block";
-          compareCounts.textContent =
-            `🟠 face-api.js: 68 puntos   ·   🟢 MediaPipe FaceMesh: ${mesh.landmarks.length} puntos`;
-        } else {
-          compareCounts.style.display = "none";
-        }
-      } else {
-        compareCounts.style.display = "none";
+        for (const f of mp.faces) drawBox(ctx, f.box, f === face);
+        drawLandmarksMP(ctx, face.landmarks);
       }
-
-      window.QualityMetrics.update(true, activeExpr, dom.raw);
-      maybeLog(dom, activeExpr, ageGenderResult, affect, pose, pos, vf, sat, af, fusionProbs, usedFusion, mlResult ? mlResult.probs : null, usedML);
+      maybeLog(dom, smoothedProbs, ageGenderResult, affect, pose, pos, vf, sat, af);
     } else {
-      domConf.textContent = "Ninguna fuente de emoción disponible…";
-      window.QualityMetrics.update(false, null, null);
+      // MediaPipe detectó rostro pero el modelo propio no cargó/falló.
+      domConf.textContent = "Modelo propio no disponible…";
       pushSatSample(satEMA * 0.97);
     }
-  } else if (result) {
-    // Fallback: FaceMesh no detectó a tiempo (aún cargando, sin GPU, etc.).
-    // Sin mesh no hay blendshapes, así que I2 (fusión y MLP) no puede correr
-    // aquí — se usa la aproximación geométrica anterior con faceExpressionNet.
-    const dom    = updateEmotions(result.expressions);
-    const affect = updateAffect(result.expressions, /* applyHappyBias */ true);
-    const pose   = computeHeadPoseFallback(result.landmarks);
-    const pos    = computeFacePosition(result.detection.box);
-    updateMetrics(null, pose, pos); // sin recorte de MediaPipe, no hay edad/género este frame
-    const af     = updateAffectModels(affect.valence, affect.arousal, pose, null);
-    updateComparisonPanel(result.expressions, null, null);
-
-    const sat = updateSatisfaction(affect, vf);
-    detectKeyMoment(sat, result.expressions, dom, vf);
-
-    if (boxToggle.checked) {
-      drawBox(ctx, result.detection.box, true);
-      drawLandmarks68(ctx, result.landmarks);
-    }
-    window.QualityMetrics.update(true, result.expressions, dom.raw);
-    maybeLog(dom, result.expressions, null, affect, pose, pos, vf, sat, af, null, false, null, false);
   } else {
     domConf.textContent = "No se detecta rostro…";
-    window.QualityMetrics.update(false, null, null);
-    updateComparisonPanel(null, null, null);
+    // Sin rostro: la señal se desvanece lentamente hacia 0.
     pushSatSample(satEMA * 0.97);
   }
 
-  updateQualityMetricsUI();
   drawSatTimeline();
-  loopId = scheduleNextFrame(detectLoop);
-}
-
-// I4: pinta el snapshot de QualityMetrics (Nivel 2, Sección 5.2) y marca en
-// rojo cuando se cruza el umbral de alerta definido en el reporte.
-function updateQualityMetricsUI() {
-  const { detectionRate, entropy, flipRate, alerts } = window.QualityMetrics.snapshot();
-  const ALERT = "#ff6b6b";
-  const NORMAL = "var(--text)";
-
-  mDetRate.textContent = detectionRate != null ? `${Math.round(detectionRate * 100)}%` : "—";
-  mDetRate.style.color = alerts.detectionRate ? ALERT : NORMAL;
-
-  mEntropy.textContent = entropy != null ? entropy.toFixed(2) : "—";
-  mEntropy.style.color = alerts.entropy ? ALERT : NORMAL;
-
-  mFlipRate.textContent = Number.isFinite(flipRate) ? `${flipRate.toFixed(1)}/s` : "—";
-  mFlipRate.style.color = alerts.flipRate ? ALERT : NORMAL;
+  loopId = requestAnimationFrame(detectLoop);
 }
 
 // Salidas de afecto estilo MorphCast a partir de (valencia, activación).
@@ -645,14 +455,15 @@ function updateVoiceUI(vf) {
   vArousal.textContent = `${Math.round(vf.arousal * 100)}%`;
 }
 
+// Combina valencia facial del cliente con su activación vocal (solo si habla el cliente).
 function computeSatisfaction(affect, vf) {
-  let s = affect.valence;
+  let s = affect.valence; // base [-1, 1]
   if (vf && vf.voiced && activeRole === "cliente") {
-    const va = vf.arousal;
+    const va = vf.arousal; // 0..1
     if (affect.valence < 0) {
-      s -= 0.4 * va * (-affect.valence);
+      s -= 0.4 * va * (-affect.valence); // voz alta/agitada acentúa lo negativo
     } else {
-      s += 0.1 * va * affect.valence;
+      s += 0.1 * va * affect.valence;    // entusiasmo positivo leve
     }
   }
   return Math.max(-1, Math.min(1, s));
@@ -679,11 +490,13 @@ function pushSatSample(s, event) {
   if (satHist.length > SAT_HIST_MAX) satHist.shift();
 }
 
+// Detector de momentos clave de (in)satisfacción, con histéresis y enfriamiento.
 function detectKeyMoment(sat, expressions, dom, vf) {
   const now = performance.now();
   const neg = (expressions.angry || 0) + (expressions.disgusted || 0) +
               (expressions.sad || 0) + (expressions.fearful || 0);
 
+  // Reset de estado en zona neutral para permitir nuevos eventos.
   if (sat > -0.15 && sat < 0.25 && neg < 0.4) momentState = "neutral";
 
   if (now - lastMomentAt < MOMENT_COOLDOWN_MS) return;
@@ -723,6 +536,7 @@ function detectKeyMoment(sat, expressions, dom, vf) {
 function renderMoments() {
   const n = momentsLog.length;
   momentsCount.textContent = n === 1 ? "1 momento" : `${n} momentos`;
+  momentsCsvBtn.disabled = n === 0;
   if (n === 0) {
     momentsList.innerHTML =
       '<li class="moments-empty">Aún no se detectan momentos clave. Inicia la cámara y el micrófono.</li>';
@@ -748,12 +562,14 @@ function fmtElapsed(sec) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+// Línea de tiempo de la satisfacción con marcadores en los momentos clave.
 function drawSatTimeline() {
   if (!satTimeline) return;
   const ctx = satTimeline.getContext("2d");
   const W = satTimeline.width, H = satTimeline.height;
   ctx.clearRect(0, 0, W, H);
 
+  // Línea base (satisfacción = 0) y bandas.
   const yFor = (s) => H / 2 - (s * (H / 2 - 8));
   ctx.strokeStyle = "rgba(255,255,255,0.15)";
   ctx.lineWidth = 1;
@@ -763,6 +579,7 @@ function drawSatTimeline() {
   const n = satHist.length;
   const xFor = (i) => (i / (SAT_HIST_MAX - 1)) * W;
 
+  // Curva.
   ctx.strokeStyle = "#6c8cff";
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -772,6 +589,7 @@ function drawSatTimeline() {
   }
   ctx.stroke();
 
+  // Marcadores de eventos.
   for (let i = 0; i < n; i++) {
     const ev = satHist[i].event;
     if (!ev) continue;
@@ -788,18 +606,38 @@ function setRole(role) {
   roleAsesor.classList.toggle("active", role === "asesor");
 }
 
+function downloadMomentsCSV() {
+  if (momentsLog.length === 0) return;
+  const header = ["timestamp_iso", "tiempo_mmss", "tipo", "disparador",
+                  "satisfaccion", "emocion", "rol", "pitch_hz", "arousal_voz"];
+  const rows = momentsLog.map((m) => {
+    const cells = [
+      m.time.toISOString(),
+      fmtElapsed(m.elapsed),
+      m.type === "pos" ? "satisfaccion" : "insatisfaccion",
+      m.trigger,
+      m.sat.toFixed(3),
+      m.emotion,
+      m.role,
+      m.pitch ?? "",
+      m.arousalVoz != null ? m.arousalVoz.toFixed(3) : "",
+    ];
+    return cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",");
+  });
+  const csv = [header.join(","), ...rows].join("\r\n");
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  saveCSV(csv, `momentos_clave_${stamp}.csv`);
+}
+
 // --- Métricas derivadas -----------------------------------------------------
 
-// Valencia y activación como promedio ponderado por las probabilidades de la
-// fuente activa. HAPPY_BIAS solo se resta cuando applyHappyBias=true (motor
-// faceExpressionNet) — emotion-fusion.js y el MLP no lo necesitan.
-function updateAffect(expressions, applyHappyBias) {
-  const happyAdj = applyHappyBias
-    ? Math.max(0, (expressions.happy || 0) - HAPPY_BIAS)
-    : (expressions.happy || 0);
+// Valencia y activación como promedio ponderado por las probabilidades del
+// modelo propio (MLP). v2.0: ya no se resta HAPPY_BIAS (ver nota junto a los
+// umbrales de satisfacción, arriba) — probs ya viene calibrado del modelo.
+function updateAffect(probs) {
   let v = 0, a = 0;
   for (const key of Object.keys(AFFECT)) {
-    const p = key === "happy" ? happyAdj : (expressions[key] || 0);
+    const p = probs[key] || 0;
     v += p * AFFECT[key].v;
     a += p * AFFECT[key].a;
   }
@@ -809,39 +647,18 @@ function updateAffect(expressions, applyHappyBias) {
   return { valence: v, arousal: a };
 }
 
-// Fallback: aproximación geométrica 2D sobre 68 puntos de face-api.js — solo
-// se usa si MediaPipe no detectó este frame (ver rama "else if (result)" en
-// detectLoop). roll es bastante fiable; yaw y pitch son aproximaciones.
-function computeHeadPoseFallback(landmarks) {
-  const p = landmarks.positions;
-  const centroid = (a, b) => {
-    let sx = 0, sy = 0;
-    for (let i = a; i <= b; i++) { sx += p[i].x; sy += p[i].y; }
-    const n = b - a + 1;
-    return { x: sx / n, y: sy / n };
-  };
-  const eyeR = centroid(36, 41);
-  const eyeL = centroid(42, 47);
-  const noseTip = p[30];
-  const mouth = { x: (p[48].x + p[54].x) / 2, y: (p[48].y + p[54].y) / 2 };
-  const eyesMid = { x: (eyeR.x + eyeL.x) / 2, y: (eyeR.y + eyeL.y) / 2 };
-  const interocular = Math.hypot(eyeL.x - eyeR.x, eyeL.y - eyeR.y) || 1;
+// v2.0: computeHeadPose() (aproximación geométrica 2D sobre 68 puntos de
+// face-api) ya NO se usa — MediaPipe entrega pose real (yaw/pitch/roll) desde
+// la matriz de transformación facial 3D, ver face.pose en detectLoop().
 
-  const roll = (Math.atan2(eyeL.y - eyeR.y, eyeL.x - eyeR.x) * 180) / Math.PI;
-  const yaw = Math.max(-90, Math.min(90, ((noseTip.x - eyesMid.x) / interocular) * 90));
-  const faceH = (mouth.y - eyesMid.y) || 1;
-  const pitch = Math.max(-90, Math.min(90, (((noseTip.y - eyesMid.y) / faceH) - 0.55) * 120));
-
-  return { roll, yaw, pitch };
-}
-
+// Posición y tamaño del rostro como porcentaje del cuadro (en la vista espejada).
 function computeFacePosition(box) {
   const w = video.videoWidth || overlay.width;
   const h = video.videoHeight || overlay.height;
   const cxRaw = (box.x + box.width / 2) / w;
   const cy = (box.y + box.height / 2) / h;
   return {
-    x: 1 - cxRaw,
+    x: 1 - cxRaw,          // espejado: lo que el usuario ve
     y: cy,
     size: box.width / w,
     xRaw: cxRaw,
@@ -849,13 +666,16 @@ function computeFacePosition(box) {
 }
 
 // --- Estabilización de edad (mediana + rango) --------------------------------
-// La edad NO cambia dentro de una sesión — cada lectura de ageGenderNet es
-// una medición ruidosa de un valor constante. Buffer muestreado a 1 Hz (no
-// cada frame, para reducir correlación serial entre muestras) y se reporta
-// la MEDIANA junto con el rango intercuartílico [Q1,Q3].
-const AGE_BUFFER_WINDOW_MS = 15000;
-const AGE_SAMPLE_INTERVAL_MS = 1000;
-let ageBuffer = [];
+// La edad NO cambia dentro de una sesión — cada lectura de ageGenderNet es una
+// medición ruidosa de un valor constante (a diferencia de la emoción, que sí
+// cambia de verdad). Se guarda un buffer muestreado a 1 Hz (no cada frame,
+// para reducir la correlación serial entre muestras consecutivas) y se
+// reporta la MEDIANA — robusta a lecturas puntuales muy alejadas por mala
+// luz o ángulo — junto con el rango intercuartílico [Q1,Q3] como referencia
+// de la incertidumbre real. Mismo diseño ya especificado para el proyecto.
+const AGE_BUFFER_WINDOW_MS = 15000;   // ventana de 15s
+const AGE_SAMPLE_INTERVAL_MS = 1000;  // muestrea a 1 Hz, no cada frame
+let ageBuffer = [];                   // [{ t, age }]
 let lastAgeSampleAt = 0;
 
 function pushAgeSample(age) {
@@ -892,6 +712,10 @@ function resetAgeBuffer() {
 }
 
 function updateMetrics(ageGenderResult, pose, pos) {
+  // ageGenderResult puede ser null (recorte inválido o predicción fallida,
+  // ver cropForAgeGender/detectLoop) — mostrar "—" en vez de romper. A
+  // diferencia de la versión con tinyFaceDetector, esto ahora es raro: el
+  // box viene de MediaPipe, que detecta ~99% de las veces (validado UTKFace).
   if (ageGenderResult) {
     pushAgeSample(ageGenderResult.age);
     const stable = stableAge();
@@ -920,26 +744,19 @@ function drawBox(ctx, box, primary = true) {
   ctx.strokeRect(box.x, box.y, box.width, box.height);
 }
 
-// 478 puntos normalizados [0,1] de MediaPipe.
-function drawFaceMeshLandmarks(ctx, landmarks, w, h) {
+// v2.0: 478 puntos normalizados [0,1] de MediaPipe (antes eran 68 puntos en
+// píxeles de face-api, con .positions) — hay que escalar por el tamaño real
+// del overlay.
+function drawLandmarksMP(ctx, landmarks) {
   ctx.fillStyle = "#4ade80";
   for (const pt of landmarks) {
     ctx.beginPath();
-    ctx.arc(pt.x * w, pt.y * h, 1.4, 0, Math.PI * 2);
+    ctx.arc(pt.x * overlay.width, pt.y * overlay.height, 1.4, 0, Math.PI * 2);
     ctx.fill();
   }
 }
 
-// 68 puntos en píxeles de face-api.js (.positions).
-function drawLandmarks68(ctx, landmarks, color = "#4ade80") {
-  ctx.fillStyle = color;
-  for (const pt of landmarks.positions) {
-    ctx.beginPath();
-    ctx.arc(pt.x, pt.y, 1.6, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
+// Mini-gráfico circumplejo: valencia (X) vs activación (Y), un punto móvil.
 function drawCircumplex(v, a) {
   if (!circ) return;
   const ctx = circ.getContext("2d");
@@ -947,6 +764,7 @@ function drawCircumplex(v, a) {
   const cx = W / 2, cy = H / 2, R = W / 2 - 14;
   ctx.clearRect(0, 0, W, H);
 
+  // Círculo y ejes.
   ctx.strokeStyle = "rgba(255,255,255,0.18)";
   ctx.lineWidth = 1;
   ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
@@ -955,6 +773,7 @@ function drawCircumplex(v, a) {
   ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R);
   ctx.stroke();
 
+  // Etiquetas de cuadrantes.
   ctx.fillStyle = "rgba(255,255,255,0.45)";
   ctx.font = "10px sans-serif";
   ctx.textAlign = "center";
@@ -965,6 +784,7 @@ function drawCircumplex(v, a) {
   ctx.textAlign = "right";
   ctx.fillText("valencia −", cx - 6, cy - 4);
 
+  // Punto (valencia → X, activación → Y invertida porque el canvas crece hacia abajo).
   const px = cx + v * R;
   const py = cy - a * R;
   ctx.fillStyle = "#6c8cff";
@@ -976,7 +796,7 @@ function drawCircumplex(v, a) {
 
 // --- Registro / CSV ---------------------------------------------------------
 
-function maybeLog(dom, expressions, ageGenderResult, affect, pose, pos, vf, sat, af, fusionProbs, usedFusion, mlProbs, usedML) {
+function maybeLog(dom, expressions, ageGenderResult, affect, pose, pos, vf, sat, af) {
   if (!logToggle.checked) return;
   const now = performance.now();
   const intervalMs = Number(intervalSel.value);
@@ -985,29 +805,14 @@ function maybeLog(dom, expressions, ageGenderResult, affect, pose, pos, vf, sat,
 
   const expr = {};
   for (const key of Object.keys(EMOTIONS)) expr[key] = expressions[key] || 0;
-
-  let fusionExpr = null;
-  if (fusionProbs) {
-    fusionExpr = {};
-    for (const key of Object.keys(EMOTIONS)) fusionExpr[key] = fusionProbs[key] || 0;
-  }
-
-  let mlExpr = null;
-  if (mlProbs) {
-    mlExpr = {};
-    for (const key of Object.keys(EMOTIONS)) mlExpr[key] = mlProbs[key] || 0;
-  }
-
   emotionLog.push({
     time: new Date(),
     dominant: dom.es,
     dominantRaw: dom.raw,
     confidence: dom.conf,
     expressions: expr,
-    fusionExpressions: fusionExpr,
-    usedFusion: !!usedFusion,
-    mlExpressions: mlExpr,
-    usedML: !!usedML,
+    // ageGenderResult (ageGenderNet sobre recorte de MediaPipe) puede ser
+    // null en casos raros — ver nota en detectLoop/cropForAgeGender.
     age: ageGenderResult ? ageGenderResult.age : null,
     gender: ageGenderResult ? (ageGenderResult.gender === "male" ? "Hombre" : "Mujer") : "—",
     genderProb: ageGenderResult ? ageGenderResult.genderProbability : null,
@@ -1030,7 +835,6 @@ function maybeLog(dom, expressions, ageGenderResult, affect, pose, pos, vf, sat,
     positivity: af ? af.positivity : null,
     attention: af ? af.attention : null,
     faces: lastFaceCount,
-    quality: window.QualityMetrics.snapshot(),
   });
   renderLog();
 }
@@ -1038,7 +842,7 @@ function maybeLog(dom, expressions, ageGenderResult, affect, pose, pos, vf, sat,
 function renderLog() {
   const n = emotionLog.length;
   logCount.textContent = n === 1 ? "1 registro" : `${n} registros`;
-  csvBtn.disabled = (n === 0 && momentsLog.length === 0);
+  csvBtn.disabled = n === 0;
   clearBtn.disabled = n === 0;
 
   if (n === 0) {
@@ -1064,20 +868,10 @@ function clearLog() {
   renderLog();
 }
 
-// --- Descarga combinada (un solo botón, un solo archivo) --------------------
-// Antes había dos botones/archivos separados (emociones + momentos clave) —
-// eso fue justo la causa de las sesiones "huérfanas" en la sesión de
-// pruebas UDLAP (se descargaba uno y se olvidaba el otro). Ahora un solo
-// clic descarga ambos registros en un solo CSV, en dos secciones separadas
-// por una línea marcadora — para leerlo con pandas, se parte el archivo en
-// esas líneas antes de pd.read_csv() de cada sección (te puedo dar el
-// snippet de lectura cuando lo necesites).
-function downloadSessionCSV() {
-  if (emotionLog.length === 0 && momentsLog.length === 0) return;
+function downloadCSV() {
+  if (emotionLog.length === 0) return;
   const keys = Object.keys(EMOTIONS);
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-
-  const emoHeader = [
+  const header = [
     "timestamp_iso", "hora_local", "emocion_dominante", "confianza",
     ...keys,
     "edad", "genero", "genero_prob",
@@ -1086,11 +880,8 @@ function downloadSessionCSV() {
     "pos_x", "pos_y", "tamano",
     "voz_pitch_hz", "voz_energia", "voz_arousal", "rol_activo", "satisfaccion",
     "cuadrante", "afecto_98", "afecto_38", "positividad", "atencion", "n_rostros",
-    "detection_rate", "expression_entropy", "flip_rate",
-    "usa_fusion_i2", ...keys.map((k) => `fusion_${k}`),
-    "usa_mlp_i2", ...keys.map((k) => `mlp_${k}`),
   ];
-  const emoRows = emotionLog.map((r) => {
+  const rows = emotionLog.map((r) => {
     const cells = [
       r.time.toISOString(),
       r.time.toLocaleString("es-MX"),
@@ -1119,47 +910,15 @@ function downloadSessionCSV() {
       r.positivity != null ? r.positivity.toFixed(4) : "",
       r.attention != null ? r.attention.toFixed(4) : "",
       r.faces,
-      r.quality && r.quality.detectionRate != null ? r.quality.detectionRate.toFixed(4) : "",
-      r.quality && r.quality.entropy != null ? r.quality.entropy.toFixed(4) : "",
-      r.quality && Number.isFinite(r.quality.flipRate) ? r.quality.flipRate.toFixed(2) : "",
-      r.usedFusion ? "1" : "0",
-      ...keys.map((k) => (r.fusionExpressions ? (r.fusionExpressions[k] || 0).toFixed(4) : "")),
-      r.usedML ? "1" : "0",
-      ...keys.map((k) => (r.mlExpressions ? (r.mlExpressions[k] || 0).toFixed(4) : "")),
     ];
     return cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",");
   });
-
-  const momHeader = ["timestamp_iso", "tiempo_mmss", "tipo", "disparador",
-                      "satisfaccion", "emocion", "rol", "pitch_hz", "arousal_voz"];
-  const momRows = momentsLog.map((m) => {
-    const cells = [
-      m.time.toISOString(),
-      fmtElapsed(m.elapsed),
-      m.type === "pos" ? "satisfaccion" : "insatisfaccion",
-      m.trigger,
-      m.sat.toFixed(3),
-      m.emotion,
-      m.role,
-      m.pitch ?? "",
-      m.arousalVoz != null ? m.arousalVoz.toFixed(3) : "",
-    ];
-    return cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",");
-  });
-
-  const csv = [
-    "### SECCION: emociones",
-    emoHeader.join(","),
-    ...emoRows,
-    "",
-    "### SECCION: momentos_clave",
-    momHeader.join(","),
-    ...momRows,
-  ].join("\r\n");
-
-  saveCSV(csv, `sesion_${stamp}.csv`);
+  const csv = [header.join(","), ...rows].join("\r\n");
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  saveCSV(csv, `emociones_${stamp}.csv`);
 }
 
+// Helper compartido: descarga un string CSV como archivo (con BOM UTF-8).
 function saveCSV(csv, filename) {
   const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -1193,10 +952,11 @@ function updateEmotions(expressions, forcedDominant) {
 
 startBtn.addEventListener("click", startCamera);
 stopBtn.addEventListener("click", stopCamera);
-csvBtn.addEventListener("click", downloadSessionCSV);
+csvBtn.addEventListener("click", downloadCSV);
 clearBtn.addEventListener("click", clearLog);
 roleCliente.addEventListener("click", () => setRole("cliente"));
 roleAsesor.addEventListener("click", () => setRole("asesor"));
+momentsCsvBtn.addEventListener("click", downloadMomentsCSV);
 
 window.addEventListener("load", async () => {
   buildBars();

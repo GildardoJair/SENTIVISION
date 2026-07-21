@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alternar modelo de edad · ageGenderNet vs Human</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Alternar modelo de edad — I5</h1>
+    <p class="sub">Un solo video, un solo canvas. El botón cambia cuál modelo estima edad/género. Misma
+      estructura que alternar-i1.html (ya confirmada funcional).</p>
+  </header>
+
+  <div class="dashboard">
+    <section class="cam-col">
+      <div class="video-wrap">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="overlay"></canvas>
+        <div id="status" class="status">Cargando modelos…</div>
+      </div>
+
+      <div class="controls">
+        <button id="startBtn" disabled>Iniciar cámara</button>
+        <button id="stopBtn" disabled>Detener</button>
+        <button id="toggleBtn" disabled>Modelo: —</button>
+      </div>
+
+      <div class="live-readouts">
+        <div class="voice-card">
+          <span class="vc-title">Estado del modelo activo</span>
+          <div class="vc-stats">
+            <div><span class="m-label">Modelo</span><span class="m-val" id="mModel">—</span></div>
+            <div><span class="m-label">Rostro</span><span class="m-val" id="mFace">—</span></div>
+            <div><span class="m-label">Detection rate (5s)</span><span class="m-val" id="mDetRate">—</span></div>
+          </div>
+          <div class="vc-stats" style="margin-top:10px;">
+            <div><span class="m-label">Edad estimada</span><span class="m-val" id="mAge">—</span></div>
+            <div><span class="m-label">Género</span><span class="m-val" id="mGender">—</span></div>
+            <div><span class="m-label">Confianza género</span><span class="m-val" id="mGenderConf">—</span></div>
+          </div>
+          <p class="vc-note">
+            Prueba con y sin lentes/gorra: el objetivo de I5 es robustez ante accesorios (Hallazgo #5),
+            no exactitud perfecta de edad — ambos modelos son probabilísticos.
+          </p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/human/dist/human.js"></script>
+  <script defer src="alternar-i5.js"></script>
+</body>
+</html>

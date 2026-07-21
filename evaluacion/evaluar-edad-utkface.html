@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Evaluación de edad · UTKFace · ageGenderNet vs Human</title>
+<style>
+  :root {
+    --bg: #0f1221; --panel: #1a1f37; --accent: #6c8cff; --text: #e8ebff;
+    --muted: #9aa3c7; --good: #4ade80; --bad: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    background: radial-gradient(1200px 600px at 50% -10%, #20264a, var(--bg));
+    color: var(--text); min-height: 100vh;
+  }
+  header { text-align: center; padding: 14px 16px 4px; }
+  h1 { margin: 0; font-size: 1.4rem; letter-spacing: -0.5px; }
+  .sub { margin: 4px 0 0; color: var(--muted); font-size: 0.85rem; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 12px 16px 40px; display: flex; flex-direction: column; gap: 18px; }
+  .panel { background: var(--panel); border-radius: 16px; padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+  .panel h2 { margin: 0 0 12px; font-size: 1.05rem; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  label { font-size: 0.88rem; color: var(--muted); }
+  select, input[type="file"] {
+    background: #232a4d; color: var(--text); border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px; padding: 7px 10px; font-size: 0.88rem;
+  }
+  button {
+    background: var(--accent); color: #fff; border: none; padding: 10px 18px;
+    border-radius: 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  #stopBtn { background: #3a4170; }
+  #csvBtn { background: var(--good); color: #0a2e16; }
+
+  .progress-wrap { background: rgba(255,255,255,0.06); border-radius: 999px; height: 10px; overflow: hidden; margin: 10px 0; }
+  .progress-bar { height: 100%; background: var(--accent); width: 0%; transition: width 0.15s ease; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+  .stat { background: rgba(255,255,255,0.04); border-radius: 10px; padding: 10px 12px; }
+  .stat .k { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat .v { font-size: 1.15rem; font-weight: 700; margin-top: 2px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 10px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  th { color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .note { font-size: 0.78rem; color: var(--muted); line-height: 1.5; margin-top: 10px; }
+  .status { font-size: 0.85rem; color: var(--muted); margin-top: 6px; }
+  .preview { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+  .preview img { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Evaluación de edad y género · UTKFace</h1>
+  <p class="sub">TinyFaceDetector→ageGenderNet vs Human vs FaceMesh→recorte→ageGenderNet — MAE/sesgo de edad y accuracy de género. Todo local, sin subir imágenes a ningún lado.</p>
+</header>
+
+<div class="wrap">
+  <div class="panel">
+    <h2>1. Selecciona la carpeta de UTKFace</h2>
+    <div class="row">
+      <input type="file" id="folderInput" webkitdirectory directory multiple />
+    </div>
+    <p class="status" id="folderStatus">Esperando selección de carpeta…</p>
+
+    <div class="row">
+      <label for="sampleSize">Muestra a procesar:</label>
+      <select id="sampleSize">
+        <option value="200">200 imágenes (rápido, ~3 min)</option>
+        <option value="500" selected>500 imágenes (~7 min)</option>
+        <option value="1000">1000 imágenes (~15 min)</option>
+        <option value="3000">3000 imágenes (~45 min)</option>
+        <option value="all">Todas las disponibles (puede tardar varias horas)</option>
+      </select>
+      <label><input type="checkbox" id="shuffleCheck" checked /> Muestreo aleatorio (recomendado)</label>
+    </div>
+    <div class="row">
+      <label for="meshMargin">Margen recorte FaceMesh (%):</label>
+      <input type="number" id="meshMargin" value="60" min="0" max="100" style="width:70px; background:#232a4d; color:var(--text); border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:7px 10px;" />
+      <span class="status" style="position:static; display:inline; background:none; padding:0; backdrop-filter:none;">(60% validado en pruebas en vivo)</span>
+    </div>
+
+    <div class="row">
+      <button id="startBtn" disabled>Iniciar evaluación</button>
+      <button id="stopBtn" disabled>Detener</button>
+      <button id="csvBtn" disabled>Descargar CSV (por imagen)</button>
+    </div>
+
+    <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+    <p class="status" id="runStatus">—</p>
+    <div class="preview" id="preview" style="display:none;">
+      <img id="previewImg" />
+      <span id="previewLabel" class="status"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>2. Resultados en vivo — edad</h2>
+    <div class="stat-grid">
+      <div class="stat"><div class="k">Procesadas</div><div class="v" id="statProcessed">0</div></div>
+      <div class="stat"><div class="k">Tiempo transcurrido</div><div class="v" id="statTime">0s</div></div>
+      <div class="stat"><div class="k">MAE face-api</div><div class="v" id="statMaeFa">—</div></div>
+      <div class="stat"><div class="k">MAE Human</div><div class="v" id="statMaeHu">—</div></div>
+      <div class="stat"><div class="k">MAE FaceMesh→recorte</div><div class="v" id="statMaeMesh">—</div></div>
+      <div class="stat"><div class="k">Detección fa / hu / mesh</div><div class="v" id="statDetRates">—</div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>3. MAE y sesgo por rango de edad (los 3 pipelines)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Rango</th><th class="num">n</th>
+          <th class="num">MAE fa</th><th class="num">MAE hu</th><th class="num">MAE mesh</th>
+          <th class="num">Sesgo fa</th><th class="num">Sesgo hu</th><th class="num">Sesgo mesh</th>
+        </tr>
+      </thead>
+      <tbody id="binTableBody">
+        <tr><td colspan="8" style="color:var(--muted); text-align:center;">Aún no hay resultados</td></tr>
+      </tbody>
+    </table>
+    <p class="note">
+      "fa" = TinyFaceDetector→ageGenderNet (pipeline actual). "hu" = @vladmandic/human.
+      "mesh" = FaceMesh→recorte→ageGenderNet (propuesta, mismo modelo de edad que "fa"
+      pero alimentado distinto). Sesgo = predicción promedio − edad real promedio.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>4. Accuracy de género</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Rango</th><th class="num">n</th>
+          <th class="num">Accuracy fa</th><th class="num">Accuracy hu</th><th class="num">Accuracy mesh</th>
+        </tr>
+      </thead>
+      <tbody id="genderTableBody">
+        <tr><td colspan="5" style="color:var(--muted); text-align:center;">Aún no hay resultados</td></tr>
+      </tbody>
+    </table>
+    <p class="note">
+      Accuracy = % de aciertos contra el género del nombre de archivo de UTKFace
+      (0=hombre, 1=mujer). "fa" y "mesh" comparten el mismo modelo de género
+      (<code>ageGenderNet</code>) — si difieren, es por el recorte de entrada, no por el modelo.
+    </p>
+  </div>
+
+  <p class="note">
+    Etiquetas de UTKFace estimadas con el algoritmo DEX y revisadas por un humano — no son
+    verificación de identidad real, pero son sustancialmente más confiables que CACD (cuyos
+    propios autores no recomiendan su uso para estimación de edad). Formato de archivo esperado:
+    <code>[edad]_[genero]_[raza]_[timestamp].jpg</code>.
+  </p>
+</div>
+
+<script type="module" src="facemesh-image.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/human/dist/human.js"></script>
+<script defer src="evaluar-edad-utkface.js"></script>
+</body>
+</html>

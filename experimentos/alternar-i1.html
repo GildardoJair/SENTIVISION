@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alternar modelo · face-api vs MediaPipe FaceMesh</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Alternar modelo — I1</h1>
+    <p class="sub">Un solo video, un solo canvas. El botón cambia cuál modelo dibuja encima. Misma
+      estructura que solo-facemesh.html (ya confirmada funcional).</p>
+  </header>
+
+  <div class="dashboard">
+    <section class="cam-col">
+      <div class="video-wrap">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="overlay"></canvas>
+        <div id="status" class="status">Cargando modelos…</div>
+      </div>
+
+      <div class="controls">
+        <button id="startBtn" disabled>Iniciar cámara</button>
+        <button id="stopBtn" disabled>Detener</button>
+        <button id="toggleBtn" disabled>Modelo: —</button>
+      </div>
+
+      <div class="live-readouts">
+        <div class="voice-card">
+          <span class="vc-title">Estado del modelo activo</span>
+          <div class="vc-stats">
+            <div><span class="m-label">Modelo</span><span class="m-val" id="mModel">—</span></div>
+            <div><span class="m-label">Rostro</span><span class="m-val" id="mFace">—</span></div>
+            <div><span class="m-label">Puntos</span><span class="m-val" id="mPts">—</span></div>
+          </div>
+          <div class="vc-stats" style="margin-top:10px;">
+            <div><span class="m-label">Detection rate (5s)</span><span class="m-val" id="mDetRate">—</span></div>
+            <div><span class="m-label">Roll</span><span class="m-val" id="mRoll">—</span></div>
+            <div><span class="m-label">Yaw</span><span class="m-val" id="mYaw">—</span></div>
+            <div><span class="m-label">Pitch</span><span class="m-val" id="mPitch">—</span></div>
+          </div>
+          <p class="vc-note">Nivel 2 (calidad de sistema en vivo), no exactitud contra verdad de referencia.</p>
+          <p class="vc-note" id="mDebugBox" style="font-family:monospace; word-break:break-all;">debug: —</p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+  <script type="module" src="facemesh.js"></script>
+  <script defer src="alternar-i1.js"></script>
+</body>
+</html>
