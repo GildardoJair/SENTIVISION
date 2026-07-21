@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Calibración de "sad" · AURA/IRIS</title>
+<style>
+  :root {
+    --bg: #0f1221; --panel: #1a1f37; --accent: #6c8cff; --text: #e8ebff;
+    --muted: #9aa3c7; --good: #4ade80; --bad: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    background: radial-gradient(1200px 600px at 50% -10%, #20264a, var(--bg));
+    color: var(--text); min-height: 100vh; padding: 20px;
+  }
+  header { text-align: center; margin-bottom: 18px; }
+  h1 { margin: 0; font-size: 1.4rem; }
+  .sub { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+  .wrap { max-width: 1100px; margin: 0 auto; display: grid; grid-template-columns: 380px 1fr; gap: 20px; }
+  @media (max-width: 860px) { .wrap { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border-radius: 16px; padding: 18px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+  .video-wrap { position: relative; background: #000; border-radius: 12px; overflow: hidden; aspect-ratio: 4/3; }
+  video, canvas.overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  .status { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); background: rgba(0,0,0,.65);
+    padding: 6px 12px; border-radius: 999px; font-size: .78rem; }
+  .controls { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+  button { background: var(--accent); color: #fff; border: none; padding: 9px 16px; border-radius: 10px;
+    font-size: .9rem; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+  button.secondary { background: #3a4170; }
+  button.good { background: var(--good); color: #0a2e16; }
+  button.bad { background: var(--bad); color: #3a0a0a; }
+  .label-row { display: flex; gap: 10px; margin-top: 12px; }
+  .label-row button { flex: 1; }
+  .count-note { color: var(--muted); font-size: .8rem; margin-top: 10px; line-height: 1.4; }
+  .raw-preview { margin-top: 14px; background: rgba(255,255,255,.04); border-radius: 10px; padding: 10px 12px; font-size: .82rem; }
+  .raw-preview .row { display: flex; justify-content: space-between; padding: 2px 0; }
+  .raw-preview .row.top { color: var(--good); font-weight: 700; }
+  table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid rgba(255,255,255,.07); }
+  th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); }
+  .tbl-wrap { max-height: 420px; overflow-y: auto; border-radius: 10px; }
+  .pill { padding: 2px 8px; border-radius: 999px; font-size: .72rem; font-weight: 700; }
+  .pill.neutral { background: rgba(108,140,255,.2); color: #a9b8ff; }
+  .pill.happy { background: rgba(74,222,128,.2); color: var(--good); }
+  .del { color: var(--bad); cursor: pointer; font-size: .8rem; }
+  .summary { margin-top: 16px; }
+  .summary h3 { margin: 0 0 8px; font-size: .95rem; }
+  .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .metric { background: rgba(255,255,255,.04); border-radius: 10px; padding: 10px 12px; }
+  .metric .m-label { font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .metric .m-val { font-size: 1.15rem; font-weight: 700; margin-top: 3px; }
+  .note { color: var(--muted); font-size: .78rem; line-height: 1.5; margin-top: 10px; }
+  .empty { color: var(--muted); text-align: center; padding: 20px; font-size: .85rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Calibración del parche de "sad" (I2 · punto 8 del backlog)</h1>
+  <p class="sub">Captura fotos reales de webcam, etiqueta a mano, mide cuánto se infla "sad" en el MLP — sin el parche <code>×0.20</code> aplicado, para poder calibrarlo con evidencia.</p>
+</header>
+
+<div class="wrap">
+  <div class="panel">
+    <div class="video-wrap">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="overlay" class="overlay"></canvas>
+      <div class="status" id="status">Cargando MediaPipe + modelo…</div>
+    </div>
+    <div class="controls">
+      <button id="startBtn" disabled>Iniciar cámara</button>
+      <button id="stopBtn" class="secondary" disabled>Detener</button>
+    </div>
+    <div class="controls">
+      <button id="captureBtn" disabled>📸 Capturar frame</button>
+    </div>
+
+    <div id="rawPreview" class="raw-preview" style="display:none;">
+      <div style="color:var(--muted); font-size:.75rem; margin-bottom:6px;">
+        Salida cruda del MLP (sin parche) — etiqueta esta captura:
+      </div>
+      <div id="rawProbs"></div>
+      <div class="label-row">
+        <button class="good" id="labelNeutral">Etiquetar: Neutral / en reposo</button>
+        <button class="good" id="labelHappy">Etiquetar: Feliz genuina</button>
+      </div>
+      <div class="controls" style="margin-top:8px;">
+        <button class="bad" id="discardBtn">Descartar captura</button>
+      </div>
+    </div>
+
+    <p class="count-note">
+      Meta: 15–20 capturas, mitad neutra/reposo y mitad feliz genuina, como
+      quedó definido en el handoff. Capturadas hasta ahora: <b id="countNote">0</b>.
+    </p>
+  </div>
+
+  <div class="panel">
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>#</th><th>Etiqueta</th><th>Dominante MLP (crudo)</th><th>P(sad)</th><th>P(happy)</th><th>P(neutral)</th><th></th></tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="7" class="empty">Aún no hay capturas.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="summary">
+      <h3>Resumen — ¿se infla "sad" en la práctica?</h3>
+      <div class="metric-grid">
+        <div class="metric">
+          <div class="m-label">P(sad) prom. — etiqueta Neutral</div>
+          <div class="m-val" id="sumSadNeutral">—</div>
+        </div>
+        <div class="metric">
+          <div class="m-label">P(sad) prom. — etiqueta Feliz</div>
+          <div class="m-val" id="sumSadHappy">—</div>
+        </div>
+        <div class="metric">
+          <div class="m-label">% capturas donde "sad" gana siendo Neutral/Feliz</div>
+          <div class="m-val" id="sumMisfire">—</div>
+        </div>
+        <div class="metric">
+          <div class="m-label">Multiplicador implícito sugerido</div>
+          <div class="m-val" id="sumSuggested">—</div>
+        </div>
+      </div>
+      <p class="note" id="sumNote">
+        El parche actual en <code>app.js</code> aplica <code>sad *= 0.20</code> de forma
+        fija y sin medir. El "multiplicador sugerido" de arriba es una primera
+        estimación empírica simple (cociente de tasas de "sad" espurio) — con
+        más capturas se puede afinar con un ajuste por mínimos cuadrados u
+        optimizando F1 sobre estas mismas etiquetas.
+      </p>
+    </div>
+
+    <div class="controls">
+      <button id="exportBtn" class="secondary" disabled>⬇️ Descargar CSV de capturas</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+// --- Réplica exacta de la matemática de emotion-ml.js (sin depender de ese
+// archivo, para que esta página sea un experimento aislado, según el patrón
+// del proyecto). Si cambias emotion-ml.js, replica el cambio aquí también.
+class EmotionML {
+  constructor() { this.ready = false; this.weights = null; }
+  async load(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`No se pudo cargar ${url}: HTTP ${res.status}`);
+    this.weights = await res.json();
+    this.ready = true;
+  }
+  classify(blendshapes) {
+    if (!this.ready || !blendshapes || !blendshapes.length) return null;
+    const { feature_names, classes, model_type } = this.weights;
+    const byName = new Map(blendshapes.map((b) => [b.categoryName, b.score]));
+    const x = feature_names.map((name) => byName.get(name) ?? 0);
+    let logits;
+    if (model_type === "logreg") {
+      logits = this.weights.coef.map((row, c) => {
+        let s = this.weights.intercept[c];
+        for (let i = 0; i < row.length; i++) s += row[i] * x[i];
+        return s;
+      });
+    } else {
+      const [W1, W2] = this.weights.coefs;
+      const [b1, b2] = this.weights.intercepts;
+      const hidden = vecDotColsPlusBias(x, W1, b1).map((v) => (v > 0 ? v : 0));
+      logits = vecDotColsPlusBias(hidden, W2, b2);
+    }
+    const max = Math.max(...logits);
+    const exps = logits.map((v) => Math.exp(v - max));
+    const sum = exps.reduce((a, b) => a + b, 0);
+    const probsArr = exps.map((v) => v / sum);
+    const probs = {};
+    classes.forEach((c, i) => { probs[c] = probsArr[i]; });
+    let predicted = classes[0], confidence = probsArr[0];
+    for (let i = 1; i < classes.length; i++) if (probsArr[i] > confidence) { confidence = probsArr[i]; predicted = classes[i]; }
+    return { probs, predicted, confidence };
+  }
+}
+function vecDotColsPlusBias(x, W, b) {
+  const nOut = b.length;
+  const out = new Array(nOut).fill(0);
+  for (let i = 0; i < x.length; i++) {
+    const xi = x[i]; if (xi === 0) continue;
+    const row = W[i];
+    for (let j = 0; j < nOut; j++) out[j] += xi * row[j];
+  }
+  for (let j = 0; j < nOut; j++) out[j] += b[j];
+  return out;
+}
+
+const EMO_ES = { neutral: "Neutral", happy: "Feliz", sad: "Triste", angry: "Enojo",
+  fearful: "Miedo", disgusted: "Disgusto", surprised: "Sorpresa" };
+
+const video = document.getElementById("video");
+const overlay = document.getElementById("overlay");
+const statusEl = document.getElementById("status");
+const startBtn = document.getElementById("startBtn");
+const stopBtn = document.getElementById("stopBtn");
+const captureBtn = document.getElementById("captureBtn");
+const rawPreview = document.getElementById("rawPreview");
+const rawProbsEl = document.getElementById("rawProbs");
+const labelNeutralBtn = document.getElementById("labelNeutral");
+const labelHappyBtn = document.getElementById("labelHappy");
+const discardBtn = document.getElementById("discardBtn");
+const tbody = document.getElementById("tbody");
+const countNote = document.getElementById("countNote");
+const exportBtn = document.getElementById("exportBtn");
+
+const emotionML = new EmotionML();
+let faceLandmarker = null;
+let stream = null;
+let running = false;
+let pendingResult = null; // { probs, predicted, confidence }
+const captures = []; // { label, probs, predicted, confidence }
+
+function setStatus(msg) { statusEl.textContent = msg; statusEl.style.display = msg ? "block" : "none"; }
+
+async function init() {
+  try {
+    setStatus("Cargando modelo MLP (emotion_ml_weights.json)…");
+    await emotionML.load("emotion_ml_weights.json");
+
+    setStatus("Cargando MediaPipe FaceLandmarker…");
+    const filesetResolver = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+    );
+    faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+      baseOptions: {
+        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+        delegate: "GPU",
+      },
+      outputFaceBlendshapes: true,
+      outputFacialTransformationMatrixes: false,
+      runningMode: "VIDEO",
+      numFaces: 1,
+    });
+
+    setStatus("Listo. Presiona «Iniciar cámara».");
+    startBtn.disabled = false;
+  } catch (e) {
+    console.error(e);
+    setStatus("Error al cargar: " + e.message +
+      " — revisa que emotion_ml_weights.json esté en esta misma carpeta.");
+  }
+}
+
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: "user" } });
+    video.srcObject = stream;
+    await video.play();
+    overlay.width = video.videoWidth || 640;
+    overlay.height = video.videoHeight || 480;
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    captureBtn.disabled = false;
+    setStatus("");
+    running = true;
+  } catch (e) {
+    console.error(e);
+    setStatus("No se pudo acceder a la cámara: " + e.message);
+  }
+}
+
+function stopCamera() {
+  running = false;
+  if (stream) stream.getTracks().forEach((t) => t.stop());
+  stream = null;
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  captureBtn.disabled = true;
+  setStatus("Cámara detenida.");
+}
+
+function captureFrame() {
+  if (!faceLandmarker || !video.videoWidth) return;
+  const result = faceLandmarker.detectForVideo(video, performance.now());
+  if (!result.faceBlendshapes || !result.faceBlendshapes.length) {
+    setStatus("No se detectó rostro en este frame — intenta de nuevo.");
+    setTimeout(() => setStatus(""), 1800);
+    return;
+  }
+  const blendshapes = result.faceBlendshapes[0].categories; // {categoryName, score}
+  const mlResult = emotionML.classify(blendshapes);
+  if (!mlResult) {
+    setStatus("El modelo no está listo todavía.");
+    return;
+  }
+  pendingResult = mlResult;
+  renderRawPreview(mlResult);
+}
+
+function renderRawPreview(r) {
+  rawPreview.style.display = "block";
+  const entries = Object.entries(r.probs).sort((a, b) => b[1] - a[1]);
+  rawProbsEl.innerHTML = entries.map(([k, v]) => {
+    const isTop = k === r.predicted;
+    return `<div class="row ${isTop ? "top" : ""}">
+      <span>${EMO_ES[k] || k}${isTop ? " ←" : ""}</span>
+      <span>${(v * 100).toFixed(1)}%</span>
+    </div>`;
+  }).join("");
+}
+
+function commitCapture(label) {
+  if (!pendingResult) return;
+  captures.push({ label, ...pendingResult, t: new Date() });
+  pendingResult = null;
+  rawPreview.style.display = "none";
+  renderTable();
+  renderSummary();
+}
+
+function discardCapture() {
+  pendingResult = null;
+  rawPreview.style.display = "none";
+}
+
+function renderTable() {
+  countNote.textContent = String(captures.length);
+  exportBtn.disabled = captures.length === 0;
+  if (captures.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">Aún no hay capturas.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = captures.map((c, i) => {
+    const pillClass = c.label === "neutral" ? "neutral" : "happy";
+    const pillText = c.label === "neutral" ? "Neutral" : "Feliz";
+    return `<tr>
+      <td>${i + 1}</td>
+      <td><span class="pill ${pillClass}">${pillText}</span></td>
+      <td>${EMO_ES[c.predicted] || c.predicted} (${(c.confidence * 100).toFixed(0)}%)</td>
+      <td>${(c.probs.sad * 100).toFixed(1)}%</td>
+      <td>${(c.probs.happy * 100).toFixed(1)}%</td>
+      <td>${(c.probs.neutral * 100).toFixed(1)}%</td>
+      <td><span class="del" data-i="${i}">✕ borrar</span></td>
+    </tr>`;
+  }).join("");
+  tbody.querySelectorAll(".del").forEach((el) => {
+    el.addEventListener("click", () => {
+      captures.splice(Number(el.dataset.i), 1);
+      renderTable();
+      renderSummary();
+    });
+  });
+}
+
+function avg(arr) { return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
+
+function renderSummary() {
+  const neutralCaps = captures.filter((c) => c.label === "neutral");
+  const happyCaps = captures.filter((c) => c.label === "happy");
+  const sadNeutral = avg(neutralCaps.map((c) => c.probs.sad));
+  const sadHappy = avg(happyCaps.map((c) => c.probs.sad));
+
+  document.getElementById("sumSadNeutral").textContent =
+    sadNeutral != null ? `${(sadNeutral * 100).toFixed(1)}% (n=${neutralCaps.length})` : "— (sin datos aún)";
+  document.getElementById("sumSadHappy").textContent =
+    sadHappy != null ? `${(sadHappy * 100).toFixed(1)}% (n=${happyCaps.length})` : "— (sin datos aún)";
+
+  const misfires = captures.filter((c) => c.predicted === "sad" && c.label !== "sad");
+  document.getElementById("sumMisfire").textContent =
+    captures.length ? `${((misfires.length / captures.length) * 100).toFixed(0)}% (${misfires.length}/${captures.length})` : "—";
+
+  // Estimación simple: si "sad" gana artificialmente con frecuencia f y el
+  // objetivo es que dominant no cambie por sad espurio, un multiplicador que
+  // lleve el P(sad) promedio en estas capturas por debajo del segundo lugar
+  // promedio es una primera aproximación razonable, NO un ajuste óptimo.
+  if (captures.length >= 4 && (sadNeutral != null || sadHappy != null)) {
+    const sadAvgAll = avg(captures.map((c) => c.probs.sad));
+    const secondAvgAll = avg(captures.map((c) => {
+      const sorted = Object.entries(c.probs).filter(([k]) => k !== "sad").sort((a, b) => b[1] - a[1]);
+      return sorted[0][1];
+    }));
+    let suggested = "0.20 (parche actual — junta más capturas para refinar)";
+    if (sadAvgAll > 0 && secondAvgAll != null) {
+      const ratio = Math.min(1, secondAvgAll / sadAvgAll * 0.85); // margen de 15% bajo el 2° lugar
+      suggested = ratio.toFixed(2);
+    }
+    document.getElementById("sumSuggested").textContent = suggested;
+  } else {
+    document.getElementById("sumSuggested").textContent = "— (junta ≥4 capturas)";
+  }
+}
+
+function exportCSV() {
+  if (captures.length === 0) return;
+  const keys = ["angry","disgusted","fearful","happy","neutral","sad","surprised"];
+  const header = ["timestamp_iso", "etiqueta_manual", "dominante_crudo", "confianza", ...keys];
+  const rows = captures.map((c) => {
+    const cells = [
+      c.t.toISOString(), c.label, c.predicted, c.confidence.toFixed(4),
+      ...keys.map((k) => (c.probs[k] || 0).toFixed(4)),
+    ];
+    return cells.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",");
+  });
+  const csv = [header.join(","), ...rows].join("\r\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  a.href = url; a.download = `calibracion_sad_${stamp}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+startBtn.addEventListener("click", startCamera);
+stopBtn.addEventListener("click", stopCamera);
+captureBtn.addEventListener("click", captureFrame);
+labelNeutralBtn.addEventListener("click", () => commitCapture("neutral"));
+labelHappyBtn.addEventListener("click", () => commitCapture("happy"));
+discardBtn.addEventListener("click", discardCapture);
+exportBtn.addEventListener("click", exportCSV);
+
+init();
+</script>
+</body>
+</html>

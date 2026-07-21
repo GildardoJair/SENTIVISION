@@ -5,20 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Detector de Emociones · Webcam</title>
   <link rel="stylesheet" href="style.css" />
-  <!-- face-api.js (fork mantenido por vladmandic, con TensorFlow.js actualizado) -->
-  <!-- Transitorio: solo alimenta expresiones/edad/género (ver nota en app.js loadModels) -->
+  <!-- v2.0: face-api.js queda SOLO para edad/género (transicional).
+       MediaPipe FaceMesh (facemesh.js) es el detector principal; el modelo
+       propio (emotion-ml.js) reemplaza a faceExpressionNet. -->
   <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
-  <!-- I1: MediaPipe FaceMesh — detección, 478 landmarks 3D, head pose, blendshapes -->
-  <script type="module" src="facemesh.js"></script>
   <script defer src="voice.js"></script>
   <script defer src="affect.js"></script>
-  <!-- I4: métricas de calidad en tiempo real (detection_rate, entropy, flip_rate) -->
-  <script defer src="metrics.js"></script>
-  <!-- I2: fusión tardía Blendshapes + audio para clasificación de emociones -->
-  <script defer src="emotion-fusion.js"></script>
-  <!-- I2: clasificador propio (MLP), entrenado sobre 52 blendshapes -->
+  <script type="module" src="facemesh.js"></script>
   <script defer src="emotion-ml.js"></script>
-  <script defer src="app.js"></script>
+  <script defer src="app_v2.js"></script>
 </head>
 <body>
   <header>
@@ -42,20 +37,7 @@
           <input type="checkbox" id="boxToggle" checked />
           Recuadro y puntos
         </label>
-        <label class="toggle">
-          <input type="checkbox" id="compareToggle" />
-          Comparar 68 vs 478 pts
-        </label>
-        <label class="log-interval">
-          Clasificador activo
-          <select id="classifierSel">
-            <option value="faceapi">faceExpressionNet (face-api.js)</option>
-            <option value="fusion">I2: Blendshapes+audio (heurístico)</option>
-            <option value="mlp" selected>I2: Modelo propio (MLP)</option>
-          </select>
-        </label>
       </div>
-      <div id="compareCounts" class="status" style="display:none; position:static; text-align:left; background:none; padding:4px 0; backdrop-filter:none;"></div>
 
       <div class="role-switch">
         <span class="role-prompt">Habla ahora:</span>
@@ -98,13 +80,6 @@
         </div>
       </div>
 
-      <div class="metrics affect2" style="margin-top:10px;">
-        <div class="metric metric-wide"><span class="m-label">Comparación en vivo · 3 motores (se registran los 3 en el CSV siempre)</span><span class="m-val"></span></div>
-        <div class="metric"><span class="m-label">faceExpressionNet</span><span class="m-val" id="cmpFaceapi">—</span></div>
-        <div class="metric"><span class="m-label">emotion-fusion.js</span><span class="m-val" id="cmpFusion">—</span></div>
-        <div class="metric"><span class="m-label">Modelo propio (MLP)</span><span class="m-val" id="cmpMLP">—</span></div>
-      </div>
-
       <div class="metrics">
         <div class="metric"><span class="m-label">Edad estim.</span><span class="m-val" id="mAge">—</span></div>
         <div class="metric"><span class="m-label">Género estim.</span><span class="m-val" id="mGender">—</span></div>
@@ -132,13 +107,6 @@
         <div class="metric"><span class="m-label">Rostros detectados</span><span class="m-val" id="mFaces">—</span></div>
       </div>
 
-      <div class="metrics affect2">
-        <div class="metric metric-wide"><span class="m-label">Calidad de sistema (Nivel 2) <span class="est">tiempo real</span></span><span class="m-val"></span></div>
-        <div class="metric"><span class="m-label">Detection rate</span><span class="m-val" id="mDetRate">—</span></div>
-        <div class="metric"><span class="m-label">Entropía expresión</span><span class="m-val" id="mEntropy">—</span></div>
-        <div class="metric"><span class="m-label">Flip rate</span><span class="m-val" id="mFlipRate">—</span></div>
-      </div>
-
       <h3 class="bars-title">6 emociones · Ekman <span class="est">+ neutral</span></h3>
       <ul id="bars" class="bars"></ul>
 
@@ -151,11 +119,11 @@
       <div class="moments-head">
         <h3>Momentos clave</h3>
         <span class="moments-count" id="momentsCount">0 momentos</span>
+        <button id="momentsCsvBtn" disabled>Descargar momentos (CSV)</button>
       </div>
       <ul id="momentsList" class="moments-list">
         <li class="moments-empty">Aún no se detectan momentos clave. Inicia la cámara y el micrófono.</li>
       </ul>
-      <p class="log-note">Se descargan junto con el registro de emociones — ver botón "Descargar sesión" abajo.</p>
     </section>
 
     <section class="log-panel">
@@ -176,7 +144,7 @@
           Registrar
         </label>
         <span class="log-count" id="logCount">0 registros</span>
-        <button id="csvBtn" disabled>Descargar sesión completa (CSV)</button>
+        <button id="csvBtn" disabled>Descargar CSV</button>
         <button id="clearBtn" disabled>Limpiar</button>
       </div>
     </div>
@@ -191,13 +159,13 @@
         </tbody>
       </table>
     </div>
-    <p class="log-note">Se muestran las últimas filas; el CSV descargado incluye la sesión completa (emociones + momentos clave, en dos secciones dentro del mismo archivo).</p>
+    <p class="log-note">Se muestran las últimas filas; el CSV incluye la sesión completa con las 7 expresiones.</p>
     </section>
     </section>
   </div>
 
   <footer>
-    <span>Modelos: MediaPipe FaceMesh (detección/pose/atención) + Modelo propio (MLP, I2) / emotion-fusion.js / FaceExpressionNet · AgeGenderNet vía recorte MediaPipe (edad/género)</span>
+    <span>Modelos: MediaPipe FaceLandmarker + modelo propio (MLP, I2) · face-api.js ageGenderNet (edad/género, transicional)</span>
   </footer>
 </body>
 </html>

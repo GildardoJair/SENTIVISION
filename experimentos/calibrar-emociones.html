@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Calibración de emociones · AURA/IRIS</title>
+<style>
+  :root {
+    --bg: #0f1221; --panel: #1a1f37; --accent: #6c8cff; --text: #e8ebff;
+    --muted: #9aa3c7; --good: #4ade80; --bad: #ff6b6b; --warn: #ffb020;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    background: radial-gradient(1200px 600px at 50% -10%, #20264a, var(--bg));
+    color: var(--text); min-height: 100vh; padding: 20px;
+  }
+  header { text-align: center; margin-bottom: 18px; }
+  h1 { margin: 0; font-size: 1.4rem; }
+  .sub { color: var(--muted); font-size: 0.85rem; margin-top: 4px; max-width: 700px; margin-left: auto; margin-right: auto; }
+  .wrap { max-width: 1280px; margin: 0 auto; display: grid; grid-template-columns: 360px 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 940px) { .wrap { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border-radius: 16px; padding: 18px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+  .video-wrap { position: relative; background: #000; border-radius: 12px; overflow: hidden; aspect-ratio: 4/3; }
+  video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  .status { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); background: rgba(0,0,0,.65);
+    padding: 6px 12px; border-radius: 999px; font-size: .78rem; }
+  .controls { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+  button { background: var(--accent); color: #fff; border: none; padding: 9px 16px; border-radius: 10px;
+    font-size: .87rem; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+  button.secondary { background: #3a4170; }
+  button.bad { background: var(--bad); color: #3a0a0a; }
+  .raw-preview { margin-top: 14px; background: rgba(255,255,255,.04); border-radius: 10px; padding: 10px 12px; font-size: .82rem; }
+  .raw-preview .row { display: flex; justify-content: space-between; padding: 2px 0; }
+  .raw-preview .row.top { color: var(--good); font-weight: 700; }
+  .label-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+  .label-grid button { padding: 10px 8px; }
+  .count-note { color: var(--muted); font-size: .8rem; margin-top: 12px; line-height: 1.4; }
+  .per-class-count { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .per-class-count span { background: rgba(255,255,255,.06); border-radius: 999px; padding: 3px 10px; font-size: .74rem; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+  th, td { text-align: center; padding: 6px 7px; border-bottom: 1px solid rgba(255,255,255,.07); }
+  th { color: var(--muted); font-weight: 600; }
+  td:first-child, th:first-child { text-align: left; color: var(--muted); font-weight: 600; }
+  .tbl-wrap { max-height: 300px; overflow-y: auto; border-radius: 10px; margin-bottom: 8px; }
+  .conf-cell.diag { background: rgba(74,222,128,.18); font-weight: 700; }
+  .conf-cell.hot { background: rgba(255,107,107,.22); }
+  h3 { margin: 18px 0 8px; font-size: .95rem; }
+  h3:first-child { margin-top: 0; }
+  .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  @media (max-width: 640px) { .metric-grid { grid-template-columns: repeat(2, 1fr); } }
+  .metric { background: rgba(255,255,255,.04); border-radius: 10px; padding: 8px 10px; }
+  .metric .m-label { font-size: .66rem; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  .metric .m-val { font-size: 1rem; font-weight: 700; margin-top: 2px; }
+  .slider-row { display: grid; grid-template-columns: 90px 1fr 50px; align-items: center; gap: 10px; margin: 8px 0; }
+  .slider-row label { font-size: .82rem; }
+  .slider-row input[type=range] { width: 100%; accent-color: var(--accent); }
+  .slider-row .val { text-align: right; font-size: .82rem; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .note { color: var(--muted); font-size: .78rem; line-height: 1.5; margin-top: 8px; }
+  .empty { color: var(--muted); text-align: center; padding: 20px; font-size: .85rem; }
+  .resetLink { color: var(--accent); font-size: .78rem; cursor: pointer; text-decoration: underline; }
+  .del { color: var(--bad); cursor: pointer; font-size: .78rem; }
+  .warn-box { background: rgba(255,176,32,.12); border: 1px solid rgba(255,176,32,.35); border-radius: 10px;
+    padding: 10px 12px; font-size: .78rem; color: var(--warn); margin-top: 10px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Calibración de emociones (I2) — las 7 clases</h1>
+  <p class="sub">Versión generalizada de calibrar-sad.html. Captura, etiqueta con la emoción real, mide matriz de
+    confusión cruda y ajusta un multiplicador por clase viendo el efecto en vivo sobre precisión/recall — antes de
+    tocar <code>smoothEmotionProbs</code> en <code>app.js</code>.</p>
+</header>
+
+<div class="wrap">
+  <div class="panel">
+    <div class="video-wrap">
+      <video id="video" autoplay muted playsinline></video>
+      <div class="status" id="status">Cargando MediaPipe + modelo…</div>
+    </div>
+    <div class="controls">
+      <button id="startBtn" disabled>Iniciar cámara</button>
+      <button id="stopBtn" class="secondary" disabled>Detener</button>
+    </div>
+    <div class="controls">
+      <button id="captureBtn" disabled>📸 Capturar frame</button>
+    </div>
+
+    <div id="rawPreview" class="raw-preview" style="display:none;">
+      <div style="color:var(--muted); font-size:.75rem; margin-bottom:6px;">
+        Salida cruda del MLP — etiqueta esta captura con la emoción real:
+      </div>
+      <div id="rawProbs"></div>
+      <div class="label-grid" id="labelGrid"></div>
+      <div class="controls" style="margin-top:8px;">
+        <button class="bad" id="discardBtn">Descartar captura</button>
+      </div>
+    </div>
+
+    <p class="count-note">
+      Capturadas hasta ahora: <b id="countTotal">0</b>.
+      <div class="per-class-count" id="perClassCount"></div>
+    </p>
+
+    <div class="warn-box">
+      ⚠️ Posar miedo/disgusto/sorpresa de forma genuina frente a una webcam es difícil incluso intencionalmente
+      — trátalas como aproximaciones, no como ground truth tan confiable como neutral/feliz/triste/enojo.
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>Matriz de confusión (cruda, sin multiplicadores)</h3>
+    <div class="tbl-wrap"><div id="confMatrix"><div class="empty">Aún no hay capturas.</div></div></div>
+
+    <h3>Precisión / Recall / F1 por clase (sin multiplicadores)</h3>
+    <div class="tbl-wrap" style="max-height:220px;"><div id="perClassMetrics"><div class="empty">—</div></div></div>
+
+    <h3>Multiplicadores por clase — ajusta y mira el efecto en vivo</h3>
+    <div id="sliders"></div>
+    <p class="note">
+      Cada probabilidad se multiplica por su factor y las 7 se renormalizan para sumar 1 (mismo mecanismo que
+      <code>smoothEmotionProbs</code> en producción, generalizado a las 7 clases en vez de solo "sad").
+      <span class="resetLink" id="resetSliders">Restablecer todos a 1.00</span>
+    </p>
+    <div class="metric-grid" id="afterMetrics"></div>
+
+    <h3>Capturas</h3>
+    <div class="tbl-wrap" id="capturesTableWrap"><div class="empty">Aún no hay capturas.</div></div>
+
+    <div class="controls" style="margin-top:10px;">
+      <button id="exportBtn" class="secondary" disabled>⬇️ Descargar CSV de capturas</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+class EmotionML {
+  constructor() { this.ready = false; this.weights = null; }
+  async load(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`No se pudo cargar ${url}: HTTP ${res.status}`);
+    this.weights = await res.json();
+    this.ready = true;
+  }
+  classify(blendshapes) {
+    if (!this.ready || !blendshapes || !blendshapes.length) return null;
+    const { feature_names, classes, model_type } = this.weights;
+    const byName = new Map(blendshapes.map((b) => [b.categoryName, b.score]));
+    const x = feature_names.map((name) => byName.get(name) ?? 0);
+    let logits;
+    if (model_type === "logreg") {
+      logits = this.weights.coef.map((row, c) => {
+        let s = this.weights.intercept[c];
+        for (let i = 0; i < row.length; i++) s += row[i] * x[i];
+        return s;
+      });
+    } else {
+      const [W1, W2] = this.weights.coefs;
+      const [b1, b2] = this.weights.intercepts;
+      const hidden = vecDotColsPlusBias(x, W1, b1).map((v) => (v > 0 ? v : 0));
+      logits = vecDotColsPlusBias(hidden, W2, b2);
+    }
+    const max = Math.max(...logits);
+    const exps = logits.map((v) => Math.exp(v - max));
+    const sum = exps.reduce((a, b) => a + b, 0);
+    const probsArr = exps.map((v) => v / sum);
+    const probs = {};
+    classes.forEach((c, i) => { probs[c] = probsArr[i]; });
+    let predicted = classes[0], confidence = probsArr[0];
+    for (let i = 1; i < classes.length; i++) if (probsArr[i] > confidence) { confidence = probsArr[i]; predicted = classes[i]; }
+    return { probs, predicted, confidence };
+  }
+}
+function vecDotColsPlusBias(x, W, b) {
+  const nOut = b.length;
+  const out = new Array(nOut).fill(0);
+  for (let i = 0; i < x.length; i++) {
+    const xi = x[i]; if (xi === 0) continue;
+    const row = W[i];
+    for (let j = 0; j < nOut; j++) out[j] += xi * row[j];
+  }
+  for (let j = 0; j < nOut; j++) out[j] += b[j];
+  return out;
+}
+
+const CLASSES = ["neutral", "happy", "sad", "angry", "fearful", "disgusted", "surprised"];
+const EMO_ES = { neutral: "Neutral", happy: "Feliz", sad: "Triste", angry: "Enojo",
+  fearful: "Miedo", disgusted: "Disgusto", surprised: "Sorpresa" };
+
+const video = document.getElementById("video");
+const statusEl = document.getElementById("status");
+const startBtn = document.getElementById("startBtn");
+const stopBtn = document.getElementById("stopBtn");
+const captureBtn = document.getElementById("captureBtn");
+const rawPreview = document.getElementById("rawPreview");
+const rawProbsEl = document.getElementById("rawProbs");
+const labelGrid = document.getElementById("labelGrid");
+const discardBtn = document.getElementById("discardBtn");
+const countTotal = document.getElementById("countTotal");
+const perClassCount = document.getElementById("perClassCount");
+const confMatrixEl = document.getElementById("confMatrix");
+const perClassMetricsEl = document.getElementById("perClassMetrics");
+const slidersEl = document.getElementById("sliders");
+const afterMetricsEl = document.getElementById("afterMetrics");
+const capturesTableWrap = document.getElementById("capturesTableWrap");
+const exportBtn = document.getElementById("exportBtn");
+const resetSlidersLink = document.getElementById("resetSliders");
+
+const emotionML = new EmotionML();
+let faceLandmarker = null;
+let stream = null;
+let pendingResult = null;
+const captures = []; // { label, probs, predicted, confidence, t }
+const multipliers = {}; CLASSES.forEach((c) => (multipliers[c] = 1.0));
+
+function setStatus(msg) { statusEl.textContent = msg; statusEl.style.display = msg ? "block" : "none"; }
+
+// Botones de etiqueta, uno por clase.
+CLASSES.forEach((c) => {
+  const b = document.createElement("button");
+  b.textContent = EMO_ES[c];
+  b.addEventListener("click", () => commitCapture(c));
+  labelGrid.appendChild(b);
+});
+
+async function init() {
+  try {
+    setStatus("Cargando modelo MLP (emotion_ml_weights.json)…");
+    await emotionML.load("emotion_ml_weights.json");
+    setStatus("Cargando MediaPipe FaceLandmarker…");
+    const filesetResolver = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+    );
+    faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+      baseOptions: {
+        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+        delegate: "GPU",
+      },
+      outputFaceBlendshapes: true,
+      outputFacialTransformationMatrixes: false,
+      runningMode: "VIDEO",
+      numFaces: 1,
+    });
+    setStatus("Listo. Presiona «Iniciar cámara».");
+    startBtn.disabled = false;
+    buildSliders();
+    renderAll();
+  } catch (e) {
+    console.error(e);
+    setStatus("Error al cargar: " + e.message + " — revisa que emotion_ml_weights.json esté en esta carpeta.");
+  }
+}
+
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: "user" } });
+    video.srcObject = stream;
+    await video.play();
+    startBtn.disabled = true; stopBtn.disabled = false; captureBtn.disabled = false;
+    setStatus("");
+  } catch (e) {
+    console.error(e);
+    setStatus("No se pudo acceder a la cámara: " + e.message);
+  }
+}
+function stopCamera() {
+  if (stream) stream.getTracks().forEach((t) => t.stop());
+  stream = null;
+  startBtn.disabled = false; stopBtn.disabled = true; captureBtn.disabled = true;
+  setStatus("Cámara detenida.");
+}
+
+function captureFrame() {
+  if (!faceLandmarker || !video.videoWidth) return;
+  const result = faceLandmarker.detectForVideo(video, performance.now());
+  if (!result.faceBlendshapes || !result.faceBlendshapes.length) {
+    setStatus("No se detectó rostro en este frame — intenta de nuevo.");
+    setTimeout(() => setStatus(""), 1800);
+    return;
+  }
+  const blendshapes = result.faceBlendshapes[0].categories;
+  const mlResult = emotionML.classify(blendshapes);
+  if (!mlResult) { setStatus("El modelo no está listo todavía."); return; }
+  pendingResult = mlResult;
+  renderRawPreview(mlResult);
+}
+
+function renderRawPreview(r) {
+  rawPreview.style.display = "block";
+  const entries = Object.entries(r.probs).sort((a, b) => b[1] - a[1]);
+  rawProbsEl.innerHTML = entries.map(([k, v]) => {
+    const isTop = k === r.predicted;
+    return `<div class="row ${isTop ? "top" : ""}"><span>${EMO_ES[k] || k}${isTop ? " ←" : ""}</span><span>${(v * 100).toFixed(1)}%</span></div>`;
+  }).join("");
+}
+
+function commitCapture(label) {
+  if (!pendingResult) return;
+  captures.push({ label, ...pendingResult, t: new Date() });
+  pendingResult = null;
+  rawPreview.style.display = "none";
+  renderAll();
+}
+function discardCapture() { pendingResult = null; rawPreview.style.display = "none"; }
+
+function applyMultipliers(probs) {
+  const out = {};
+  let total = 0;
+  for (const c of CLASSES) { out[c] = (probs[c] || 0) * multipliers[c]; total += out[c]; }
+  if (total > 0) for (const c of CLASSES) out[c] /= total;
+  return out;
+}
+
+function buildSliders() {
+  slidersEl.innerHTML = "";
+  CLASSES.forEach((c) => {
+    const row = document.createElement("div");
+    row.className = "slider-row";
+    row.innerHTML = `
+      <label>${EMO_ES[c]}</label>
+      <input type="range" min="0" max="1.5" step="0.05" value="1.00" data-c="${c}" />
+      <span class="val" data-valfor="${c}">1.00</span>`;
+    slidersEl.appendChild(row);
+  });
+  slidersEl.querySelectorAll("input[type=range]").forEach((inp) => {
+    inp.addEventListener("input", () => {
+      const c = inp.dataset.c;
+      multipliers[c] = Number(inp.value);
+      slidersEl.querySelector(`[data-valfor="${c}"]`).textContent = multipliers[c].toFixed(2);
+      renderAfterMetrics();
+      renderCapturesTable();
+    });
+  });
+}
+resetSlidersLink.addEventListener("click", () => {
+  CLASSES.forEach((c) => (multipliers[c] = 1.0));
+  slidersEl.querySelectorAll("input[type=range]").forEach((inp) => (inp.value = 1.0));
+  slidersEl.querySelectorAll(".val").forEach((el) => (el.textContent = "1.00"));
+  renderAfterMetrics();
+  renderCapturesTable();
+});
+
+function buildConfusion(getPred) {
+  const m = {};
+  CLASSES.forEach((r) => { m[r] = {}; CLASSES.forEach((c) => (m[r][c] = 0)); });
+  captures.forEach((cap) => { m[cap.label][getPred(cap)] = (m[cap.label][getPred(cap)] || 0) + 1; });
+  return m;
+}
+
+function metricsFromConfusion(m) {
+  const rows = [];
+  for (const c of CLASSES) {
+    const tp = m[c][c] || 0;
+    let predictedAsC = 0, actualC = 0;
+    for (const r of CLASSES) { predictedAsC += m[r][c] || 0; actualC += m[c][r] || 0; }
+    const precision = predictedAsC > 0 ? tp / predictedAsC : null;
+    const recall = actualC > 0 ? tp / actualC : null;
+    const f1 = (precision != null && recall != null && (precision + recall) > 0)
+      ? 2 * precision * recall / (precision + recall) : null;
+    rows.push({ c, precision, recall, f1, n: actualC });
+  }
+  return rows;
+}
+
+function renderConfMatrix(m, container) {
+  if (captures.length === 0) { container.innerHTML = '<div class="empty">Aún no hay capturas.</div>'; return; }
+  const usedClasses = CLASSES.filter((c) => captures.some((cap) => cap.label === c));
+  let html = "<table><tr><th>real \\ pred.</th>" + CLASSES.map((c) => `<th>${EMO_ES[c].slice(0,4)}</th>`).join("") + "</tr>";
+  usedClasses.forEach((r) => {
+    html += `<tr><td>${EMO_ES[r]}</td>`;
+    CLASSES.forEach((c) => {
+      const v = m[r][c] || 0;
+      let cls = "";
+      if (v > 0 && c === r) cls = "conf-cell diag";
+      else if (v > 0 && c !== r) cls = "conf-cell hot";
+      html += `<td class="${cls}">${v || ""}</td>`;
+    });
+    html += "</tr>";
+  });
+  html += "</table>";
+  container.innerHTML = html;
+}
+
+function renderPerClassMetrics(rows, container) {
+  if (captures.length === 0) { container.innerHTML = '<div class="empty">—</div>'; return; }
+  const fmt = (v) => (v == null ? "—" : (v * 100).toFixed(0) + "%");
+  let html = "<table><tr><th>Clase</th><th>n</th><th>Precisión</th><th>Recall</th><th>F1</th></tr>";
+  rows.forEach((r) => {
+    if (r.n === 0 && !CLASSES.some(c => c===r.c)) return;
+    html += `<tr><td>${EMO_ES[r.c]}</td><td>${r.n}</td><td>${fmt(r.precision)}</td><td>${fmt(r.recall)}</td><td>${fmt(r.f1)}</td></tr>`;
+  });
+  html += "</table>";
+  container.innerHTML = html;
+}
+
+function renderAfterMetrics() {
+  const mAfter = buildConfusion((cap) => {
+    const adj = applyMultipliers(cap.probs);
+    return Object.entries(adj).sort((a, b) => b[1] - a[1])[0][0];
+  });
+  let correct = 0;
+  captures.forEach((cap) => {
+    const adj = applyMultipliers(cap.probs);
+    const pred = Object.entries(adj).sort((a, b) => b[1] - a[1])[0][0];
+    if (pred === cap.label) correct++;
+  });
+  const macroRows = metricsFromConfusion(mAfter).filter((r) => r.n > 0);
+  const macroF1 = macroRows.length ? macroRows.reduce((a, r) => a + (r.f1 || 0), 0) / macroRows.length : null;
+  afterMetricsEl.innerHTML = `
+    <div class="metric"><div class="m-label">Accuracy (con multiplicadores)</div>
+      <div class="m-val">${captures.length ? `${correct}/${captures.length} (${((correct/captures.length)*100).toFixed(0)}%)` : "—"}</div></div>
+    <div class="metric"><div class="m-label">F1 macro (con multiplicadores)</div>
+      <div class="m-val">${macroF1 != null ? (macroF1*100).toFixed(0) + "%" : "—"}</div></div>`;
+}
+
+function renderCapturesTable() {
+  countTotal.textContent = String(captures.length);
+  exportBtn.disabled = captures.length === 0;
+
+  const counts = {};
+  captures.forEach((c) => (counts[c.label] = (counts[c.label] || 0) + 1));
+  perClassCount.innerHTML = CLASSES.filter((c) => counts[c]).map((c) => `<span>${EMO_ES[c]}: ${counts[c]}</span>`).join("");
+
+  if (captures.length === 0) {
+    capturesTableWrap.innerHTML = '<div class="empty">Aún no hay capturas.</div>';
+    return;
+  }
+  let html = "<table><tr><th>#</th><th>Etiqueta</th><th>Pred. cruda</th><th>Pred. con mult.</th><th></th></tr>";
+  captures.forEach((c, i) => {
+    const adj = applyMultipliers(c.probs);
+    const predAdj = Object.entries(adj).sort((a, b) => b[1] - a[1])[0][0];
+    const okRaw = c.predicted === c.label;
+    const okAdj = predAdj === c.label;
+    html += `<tr>
+      <td>${i + 1}</td>
+      <td>${EMO_ES[c.label]}</td>
+      <td style="color:${okRaw ? "var(--good)" : "var(--bad)"}">${EMO_ES[c.predicted]}</td>
+      <td style="color:${okAdj ? "var(--good)" : "var(--bad)"}">${EMO_ES[predAdj]}</td>
+      <td><span class="del" data-i="${i}">✕</span></td>
+    </tr>`;
+  });
+  html += "</table>";
+  capturesTableWrap.innerHTML = html;
+  capturesTableWrap.querySelectorAll(".del").forEach((el) => {
+    el.addEventListener("click", () => { captures.splice(Number(el.dataset.i), 1); renderAll(); });
+  });
+}
+
+function renderAll() {
+  const mRaw = buildConfusion((cap) => cap.predicted);
+  renderConfMatrix(mRaw, confMatrixEl);
+  renderPerClassMetrics(metricsFromConfusion(mRaw), perClassMetricsEl);
+  renderAfterMetrics();
+  renderCapturesTable();
+}
+
+function exportCSV() {
+  if (captures.length === 0) return;
+  const header = ["timestamp_iso", "etiqueta_manual", "dominante_crudo", "confianza", ...CLASSES];
+  const rows = captures.map((c) => {
+    const cells = [c.t.toISOString(), c.label, c.predicted, c.confidence.toFixed(4), ...CLASSES.map((k) => (c.probs[k] || 0).toFixed(4))];
+    return cells.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",");
+  });
+  const csv = [header.join(","), ...rows].join("\r\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  a.href = url; a.download = `calibracion_emociones_${stamp}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+startBtn.addEventListener("click", startCamera);
+stopBtn.addEventListener("click", stopCamera);
+captureBtn.addEventListener("click", captureFrame);
+discardBtn.addEventListener("click", discardCapture);
+exportBtn.addEventListener("click", exportCSV);
+
+init();
+</script>
+</body>
+</html>

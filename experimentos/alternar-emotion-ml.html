@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alternar modelo · emotion-ml (MLP) vs emotion-fusion.js</title>
+  <link rel="stylesheet" href="../style.css" />
+  <style>
+    /* Estilos propios de esta página, no tocan style.css compartido. */
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 720px) {
+      .compare-grid { grid-template-columns: 1fr; }
+    }
+    .agree-banner {
+      text-align: center;
+      font-weight: 700;
+      font-size: 1.05rem;
+      padding: 8px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.04);
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Alternar modelo — emotion-ml (MLP propio) vs emotion-fusion.js</h1>
+    <p class="sub">Mismo frame, mismos 52 blendshapes de MediaPipe FaceMesh — cada motor clasifica por
+      su cuenta, en vivo, para comparar cara a cara. No toca app.js, facemesh.js, ni emotion-fusion.js.</p>
+  </header>
+
+  <div class="dashboard">
+    <section class="cam-col">
+      <div class="video-wrap">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="overlay"></canvas>
+        <div id="status" class="status">Cargando modelos…</div>
+      </div>
+
+      <div class="controls">
+        <button id="startBtn" disabled>Iniciar cámara</button>
+        <button id="stopBtn" disabled>Detener</button>
+        <label class="toggle">
+          <input type="checkbox" id="landmarksToggle" checked />
+          Ver landmarks
+        </label>
+        <span class="mic-status" id="detRateLabel">Detection rate (5s): <span id="detRate">—</span></span>
+      </div>
+    </section>
+
+    <section class="data-col">
+      <div class="agree-banner" id="agree">—</div>
+
+      <div class="compare-grid" style="grid-template-columns: 1fr 1fr 1fr;">
+        <div class="voice-card">
+          <span class="vc-title">Modelo propio — MLP (I2)</span>
+          <div class="dominant" style="border:none; padding-bottom:8px;">
+            <span class="emoji" id="mlEmoji" style="font-size:2.2rem;">🙂</span>
+            <div>
+              <div class="dom-label" id="mlLabel">—</div>
+              <div class="dom-conf" id="mlConf">Esperando…</div>
+            </div>
+          </div>
+          <ul class="bars" id="mlBars" style="margin-top:6px;"></ul>
+          <p class="vc-note">emotion_ml_weights.json — arquitectura 52→oculta→7, entrenada sobre RAF-DB.</p>
+        </div>
+
+        <div class="voice-card">
+          <span class="vc-title">emotion-fusion.js (heurístico)</span>
+          <div class="dominant" style="border:none; padding-bottom:8px;">
+            <span class="emoji" id="fusionEmoji" style="font-size:2.2rem;">🙂</span>
+            <div>
+              <div class="dom-label" id="fusionLabel">—</div>
+              <div class="dom-conf" id="fusionConf">Esperando…</div>
+            </div>
+          </div>
+          <ul class="bars" id="fusionBars" style="margin-top:6px;"></ul>
+          <p class="vc-note">Pesos AU→emoción curados a mano (sin audio en esta página, activeRole fijo en "cliente").</p>
+        </div>
+
+        <div class="voice-card">
+          <span class="vc-title">faceExpressionNet (face-api.js)</span>
+          <div class="dominant" style="border:none; padding-bottom:8px;">
+            <span class="emoji" id="faceapiEmoji" style="font-size:2.2rem;">🙂</span>
+            <div>
+              <div class="dom-label" id="faceapiLabel">—</div>
+              <div class="dom-conf" id="faceapiConf">Esperando…</div>
+            </div>
+          </div>
+          <ul class="bars" id="faceapiBars" style="margin-top:6px;"></ul>
+          <p class="vc-note">Detección independiente (tinyFaceDetector) — puede fallar aunque MediaPipe sí detecte; es
+            justo el hallazgo ya documentado. Detection rate propio: <span id="faceapiDetRate">—</span></p>
+        </div>
+      </div>
+
+      <p class="privacy">
+        🔒 Todo el procesamiento ocurre en este navegador — el video nunca sale de tu equipo, nada se sube
+        a ningún servidor.
+      </p>
+    </section>
+  </div>
+
+  <footer>
+    <span>Motores: MediaPipe FaceLandmarker (facemesh.js) + emotion-ml.js + emotion-fusion.js</span>
+  </footer>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+  <script type="module" src="../facemesh.js"></script>
+  <script defer src="../emotion-fusion.js"></script>
+  <script defer src="../emotion-ml.js"></script>
+  <script defer src="alternar-emotion-ml.js"></script>
+</body>
+</html>

@@ -140,6 +140,62 @@ canvas.chart { width: 100%; display: block; background: rgba(0,0,0,0.22); border
 .legend .item { display: flex; align-items: center; gap: 6px; }
 .legend .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 
+.moments-donut-wrap { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.moments-donut-split { display: flex; gap: 28px; }
+.mds-item { text-align: center; }
+.mds-item .mds-val { display: block; font-size: 1.4rem; font-weight: 800; }
+.mds-item .mds-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
+.mds-item.neg .mds-val { color: var(--bad); }
+.mds-item.pos .mds-val { color: var(--good); }
+
+.sr-btns { display: flex; gap: 10px; flex-wrap: wrap; }
+.sr-btn {
+  flex: 1 1 140px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 12px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, transform .1s;
+}
+.sr-btn:hover { border-color: rgba(255,255,255,0.32); }
+.sr-btn:active { transform: scale(0.98); }
+.sr-btn.neg.active { background: rgba(255,107,107,0.2); border-color: var(--bad); color: var(--bad); }
+.sr-btn.neu.active { background: rgba(154,163,199,0.2); border-color: var(--muted); color: var(--text); }
+.sr-btn.pos.active { background: rgba(74,222,128,0.2); border-color: var(--good); color: var(--good); }
+
+.sr-compare {
+  margin-top: 16px;
+  padding: 13px 14px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.1);
+  font-size: 0.88rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sr-compare.match { border-color: rgba(74,222,128,0.4); }
+.sr-compare.mismatch { border-color: rgba(255,107,107,0.4); }
+.sr-compare .sr-icon { font-size: 1.15rem; }
+
+.dl-btn {
+  margin-top: 12px;
+  background: rgba(108,140,255,0.14);
+  border: 1px solid rgba(108,140,255,0.4);
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.dl-btn:hover { background: rgba(108,140,255,0.22); border-color: rgba(108,140,255,0.6); }
+
 .tooltip {
   position: absolute;
   pointer-events: none;
@@ -157,21 +213,38 @@ canvas.chart { width: 100%; display: block; background: rgba(0,0,0,0.22); border
 .tooltip b { color: var(--accent); }
 .chart-wrap { position: relative; }
 
-/* --- Dos columnas: distribución + cuadrante --- */
-.two-col {
-  display: grid;
-  grid-template-columns: 1.3fr 1fr;
-  gap: 20px;
-  align-items: start;
+/* --- Veredicto de sesión --- */
+.verdict-box {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
 }
-@media (max-width: 860px) { .two-col { grid-template-columns: 1fr; } }
-
-.quad-bars { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
-.quad-bar-row { display: flex; align-items: center; gap: 10px; font-size: 0.78rem; }
-.quad-bar-row .qlabel { flex: 0 0 150px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.quad-bar-track { flex: 1; height: 8px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden; }
-.quad-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--good)); border-radius: 999px; }
-.quad-bar-pct { flex: 0 0 40px; text-align: right; color: var(--text); font-weight: 600; }
+.verdict-label { font-size: 2.1rem; font-weight: 800; }
+.verdict-sub { color: var(--muted); font-size: 0.92rem; }
+.verdict-trend {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+}
+.verdict-trend.up { color: var(--good); }
+.verdict-trend.down { color: var(--bad); }
+.verdict-trend.flat { color: var(--muted); }
+.verdict-bars { display: flex; flex-direction: column; gap: 9px; }
+.vbar-row { display: flex; align-items: center; gap: 10px; font-size: 0.82rem; }
+.vbar-tag { flex: 0 0 120px; color: var(--muted); }
+.vbar-tag.pos { color: var(--good); }
+.vbar-tag.neg { color: var(--bad); }
+.vbar-track { flex: 1; height: 10px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden; }
+.vbar-fill { height: 100%; border-radius: 999px; }
+.vbar-fill.pos { background: var(--good); }
+.vbar-fill.neu { background: var(--muted); }
+.vbar-fill.neg { background: var(--bad); }
+.vbar-pct { flex: 0 0 38px; text-align: right; font-weight: 600; }
+.verdict-note { margin: 14px 2px 0; font-size: 0.75rem; color: var(--muted); line-height: 1.5; }
 
 /* --- Momentos --- */
 .moments-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -219,23 +292,72 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
     </div>
     <div class="upload-grid">
       <div class="upload-box required">
-        <span class="label">Registro de emociones <span class="tag req">requerido</span></span>
+        <span class="label">Registro de sesión <span class="tag req">requerido</span></span>
         <input type="file" id="fileEmociones" accept=".csv" />
-        <span class="file-status" id="statusEmociones">Esperando archivo (emociones_*.csv)…</span>
+        <span class="file-status" id="statusEmociones">Esperando archivo (sesion_*.csv, o emociones_*.csv si es de antes)…</span>
       </div>
       <div class="upload-box">
         <span class="label">Momentos clave <span class="tag opt">opcional</span></span>
         <input type="file" id="fileMomentos" accept=".csv" />
-        <span class="file-status" id="statusMomentos">Esperando archivo (momentos_clave_*.csv)…</span>
+        <span class="file-status" id="statusMomentos">No hace falta si ya subiste sesion_*.csv arriba — solo para momentos_clave_*.csv sueltos (formato anterior)</span>
       </div>
     </div>
   </section>
 
   <section class="panel" id="emptyState">
-    <p class="empty-hint">Carga el CSV de registro de emociones que exporta la app (botón «Descargar CSV») para ver el análisis de la sesión. Si además cargas el CSV de momentos clave, se cruzarán ambos: los momentos aparecerán marcados sobre la línea de tiempo y listados abajo.</p>
+    <p class="empty-hint">Carga el CSV que exporta la app (botón «Descargar sesión completa») para ver el análisis de la sesión — trae emociones y momentos clave juntos. Si tienes CSVs de antes (dos archivos sueltos: emociones_*.csv + momentos_clave_*.csv), también funcionan igual.</p>
   </section>
 
   <div id="dashboard" style="display:none; flex-direction:column; gap:20px;">
+
+    <section class="panel">
+      <div class="section-head">
+        <h2>Veredicto de la sesión</h2>
+        <span class="hint">mismo criterio que usa app.js en vivo (SAT_THRESHOLD_POS/NEG)</span>
+      </div>
+      <div class="verdict-box">
+        <span class="verdict-label" id="verdictLabel">—</span>
+        <span class="verdict-sub" id="verdictSub"></span>
+        <span class="verdict-trend" id="verdictTrend"></span>
+      </div>
+      <div class="verdict-bars">
+        <div class="vbar-row">
+          <span class="vbar-tag pos">Satisfecho</span>
+          <span class="vbar-track"><span class="vbar-fill pos" id="vbarPos"></span></span>
+          <span class="vbar-pct" id="vbarPosPct">—</span>
+        </div>
+        <div class="vbar-row">
+          <span class="vbar-tag">Neutral</span>
+          <span class="vbar-track"><span class="vbar-fill neu" id="vbarNeu"></span></span>
+          <span class="vbar-pct" id="vbarNeuPct">—</span>
+        </div>
+        <div class="vbar-row">
+          <span class="vbar-tag neg">Insatisfecho</span>
+          <span class="vbar-track"><span class="vbar-fill neg" id="vbarNeg"></span></span>
+          <span class="vbar-pct" id="vbarNegPct">—</span>
+        </div>
+      </div>
+      <p class="verdict-note">
+        El veredicto usa el promedio de satEMA de toda la sesión contra los mismos umbrales de app.js.
+        La tendencia compara el promedio del primer tercio de la sesión contra el último tercio
+        (cambio &gt; 0.15 se considera mejora/empeoramiento; si no, se marca como estable).
+      </p>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <h2>Autoevaluación de la persona</h2>
+        <span class="hint">Pregúntale directo: "¿cómo te sentiste con esta interacción?" y marca su respuesta</span>
+      </div>
+      <div class="sr-btns" id="selfReportBtns">
+        <button type="button" class="sr-btn neg" data-val="neg">😟 Insatisfecho</button>
+        <button type="button" class="sr-btn neu" data-val="neu">😐 Neutro</button>
+        <button type="button" class="sr-btn pos" data-val="pos">🙂 Satisfecho</button>
+      </div>
+      <div id="selfReportCompare"></div>
+      <button type="button" id="downloadRegistroBtn" class="dl-btn" style="display:none;">⬇ Descargar registro de esta prueba (.csv)</button>
+      <p class="verdict-note">Esto no viene del CSV — lo marcas tú a mano después de preguntarle. Sirve para comparar contra lo que el sistema midió y ver qué tan cerca estuvo.</p>
+    </section>
 
     <section class="panel">
       <div class="section-head"><h2>Resumen de la sesión</h2></div>
@@ -268,16 +390,38 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
       <div class="legend" id="emoLegend"></div>
     </section>
 
-    <section class="panel two-col">
-      <div>
-        <div class="section-head"><h2>Recorrido en el cuadrante afectivo</h2></div>
-        <canvas class="chart" id="circChart" width="360" height="360" style="width:100%; max-width:380px; aspect-ratio:1/1;"></canvas>
-        <p class="coverage-note">Cada punto es una muestra (valencia, activación); el trazo más claro es el inicio de la sesión y el más intenso el final.</p>
+    <section class="panel">
+      <div class="section-head">
+        <h2>Recorrido en el cuadrante afectivo</h2>
+        <span class="hint" id="circNeutroHint"></span>
       </div>
-      <div>
-        <div class="section-head"><h2>Tiempo por cuadrante</h2></div>
-        <div class="quad-bars" id="quadBars"></div>
+      <canvas class="chart" id="circChart" width="480" height="480" style="width:100%; max-width:480px; aspect-ratio:1/1; margin:0 auto; display:block;"></canvas>
+      <div class="legend" id="circLegend" style="justify-content:center; margin-top:12px;"></div>
+      <p class="coverage-note">Cada punto es una muestra (valencia, activación), coloreada según su cuadrante. Las manchas de fondo son la densidad: donde se superponen varias muestras del mismo color, se ve más intenso. El trazo tenue es solo referencia del orden temporal (más claro al inicio, más intenso al final).</p>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <h2>Orientación de la cabeza</h2>
+        <span class="hint" id="headHint"></span>
       </div>
+      <div class="chart-wrap">
+        <canvas class="chart" id="headChart" height="200"></canvas>
+      </div>
+      <div class="legend" id="headLegend"></div>
+      <p class="coverage-note">Roll (inclinación) se mide directo del ángulo entre los ojos y es confiable. Yaw (giro izq/der) y pitch (cabeceo) son aproximaciones geométricas, no una medición de pose 3D — tómalos como referencia, no como dato exacto.</p>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <h2>Causas de los momentos clave</h2>
+        <span class="hint" id="momentsDonutHint"></span>
+      </div>
+      <div class="moments-donut-wrap">
+        <canvas class="chart" id="momentsDonut" width="260" height="260" style="width:100%; max-width:260px; aspect-ratio:1/1; margin:0 auto; display:block;"></canvas>
+        <div class="moments-donut-split" id="momentsDonutSplit"></div>
+      </div>
+      <div class="legend" id="momentsDonutLegend" style="justify-content:center;"></div>
     </section>
 
     <section class="panel">
@@ -314,7 +458,14 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
 
   let emoRows = [];   // filas parseadas del CSV de emociones
   let momRows = [];   // filas parseadas del CSV de momentos (opcional)
+  let emoFileName = "";
+  let momFileName = "";
   let sessionStartMs = null;
+
+  // Mismos umbrales que app.js (SAT_THRESHOLD_POS / SAT_THRESHOLD_NEG).
+  // NOTA: valores duplicados a mano — si cambian en app.js, actualizar aquí también.
+  const SAT_THRESHOLD_POS = 0.5;
+  const SAT_THRESHOLD_NEG = -0.3;
 
   const $ = (id) => document.getElementById(id);
 
@@ -366,6 +517,27 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
 
   const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
 
+  // ---------------------------------------------------------------------
+  // Detecta si el archivo es el formato combinado nuevo (un solo CSV con
+  // ambas secciones, descargado con "Descargar sesión completa") y lo
+  // separa en dos textos independientes. Si no encuentra el marcador,
+  // devuelve null — el archivo se trata como el formato anterior de un
+  // solo archivo por tipo (compatibilidad con CSVs viejos de dos archivos).
+  // ---------------------------------------------------------------------
+  const EMO_MARKER = "### SECCION: emociones";
+  const MOM_MARKER = "### SECCION: momentos_clave";
+
+  function splitCombinedCSV(text) {
+    const emoIdx = text.indexOf(EMO_MARKER);
+    if (emoIdx === -1) return null;
+    const momIdx = text.indexOf(MOM_MARKER);
+    const emoStart = emoIdx + EMO_MARKER.length;
+    const emoEnd = momIdx === -1 ? text.length : momIdx;
+    const emoText = text.slice(emoStart, emoEnd).trim();
+    const momText = momIdx === -1 ? "" : text.slice(momIdx + MOM_MARKER.length).trim();
+    return { emoText, momText };
+  }
+
   function readFileText(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -384,15 +556,42 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
     if (!file) return;
     try {
       const text = await readFileText(file);
-      const rows = rowsToObjects(parseCSV(text));
+      const combined = splitCombinedCSV(text);
+
+      // Formato nuevo (un solo archivo, "Descargar sesión completa"): se
+      // separan las dos secciones. Formato anterior (dos archivos sueltos):
+      // combined es null y se procesa el archivo completo como antes.
+      const emoText = combined ? combined.emoText : text;
+
+      const rows = rowsToObjects(parseCSV(emoText));
       const parsed = rows
         .map((r) => normalizeEmoRow(r))
         .filter((r) => r.t instanceof Date && !isNaN(r.t));
       parsed.sort((a, b) => a.t - b.t);
-      if (parsed.length === 0) throw new Error("El archivo no tiene filas válidas de emociones_*.csv");
+      if (parsed.length === 0) throw new Error("El archivo no tiene filas válidas de registro de emociones");
       emoRows = parsed;
-      statusEl.textContent = `✓ ${parsed.length} muestras cargadas de "${file.name}"`;
+      emoFileName = file.name;
+      selfReport = null;
+      document.querySelectorAll("#selfReportBtns .sr-btn").forEach((b) => b.classList.remove("active"));
+      statusEl.textContent = combined
+        ? `✓ ${parsed.length} muestras cargadas de "${file.name}" (formato combinado)`
+        : `✓ ${parsed.length} muestras cargadas de "${file.name}"`;
       statusEl.className = "file-status ok";
+
+      // El formato combinado trae también los momentos clave en el mismo
+      // archivo — se cargan de una vez, sin necesitar el segundo input.
+      if (combined && combined.momText) {
+        const momStatusEl = $("statusMomentos");
+        const momParsed = rowsToObjects(parseCSV(combined.momText))
+          .map((r) => normalizeMomRow(r))
+          .filter((r) => r.t instanceof Date && !isNaN(r.t));
+        momParsed.sort((a, b) => a.t - b.t);
+        momRows = momParsed;
+        momFileName = file.name;
+        momStatusEl.textContent = `✓ ${momParsed.length} momentos incluidos en "${file.name}"`;
+        momStatusEl.className = "file-status ok";
+      }
+
       tryRender();
     } catch (err) {
       console.error(err);
@@ -407,13 +606,22 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
     if (!file) return;
     try {
       const text = await readFileText(file);
-      const rows = rowsToObjects(parseCSV(text));
+      const combined = splitCombinedCSV(text);
+      // Por si suben aquí por error el archivo combinado nuevo en vez del
+      // momentos_clave_*.csv suelto — se extrae solo la sección que aplica.
+      const momText = combined ? combined.momText : text;
+      if (combined && !combined.momText) {
+        throw new Error('Este archivo combinado no trae sección de momentos clave (0 momentos en la sesión).');
+      }
+
+      const rows = rowsToObjects(parseCSV(momText));
       const parsed = rows
         .map((r) => normalizeMomRow(r))
         .filter((r) => r.t instanceof Date && !isNaN(r.t));
       parsed.sort((a, b) => a.t - b.t);
-      if (parsed.length === 0) throw new Error("El archivo no tiene filas válidas de momentos_clave_*.csv");
+      if (parsed.length === 0) throw new Error("El archivo no tiene filas válidas de momentos clave");
       momRows = parsed;
+      momFileName = file.name;
       statusEl.textContent = `✓ ${parsed.length} momentos cargados de "${file.name}"`;
       statusEl.className = "file-status ok";
       tryRender();
@@ -436,6 +644,9 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
       rol: r["rol_activo"] || "",
       cuadrante: r["cuadrante"] || "",
       nRostros: num(r["n_rostros"]),
+      roll: num(r["roll_deg"]),
+      yaw: num(r["yaw_deg"]),
+      pitch: num(r["pitch_deg"]),
     };
     for (const k of EMOTION_KEYS) out[k] = num(r[k]) || 0;
     return out;
@@ -487,12 +698,75 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
     $("dashboard").style.display = "flex";
     sessionStartMs = emoRows[0].t.getTime();
 
+    renderVerdict();
+    renderSelfReportCompare();
     renderSummary();
     renderSatChart();
     renderEmoChart();
     renderCircChart();
-    renderQuadBars();
+    renderHeadChart();
+    renderMomentsDonuts();
     renderMoments();
+  }
+
+  // Veredicto global: promedio de satEMA contra los mismos umbrales que app.js,
+  // más el % de tiempo en cada banda y una tendencia (primer tercio vs último tercio).
+  function computeVerdict(rows) {
+    const satVals = rows.map((r) => r.satisfaccion).filter((v) => v !== null);
+    if (satVals.length === 0) return null;
+
+    const avg = satVals.reduce((a, b) => a + b, 0) / satVals.length;
+    let verdict, color;
+    if (avg > SAT_THRESHOLD_POS) { verdict = "Satisfecho"; color = "var(--good)"; }
+    else if (avg < SAT_THRESHOLD_NEG) { verdict = "Insatisfecho"; color = "var(--bad)"; }
+    else { verdict = "Neutral"; color = "var(--muted)"; }
+
+    let pos = 0, neu = 0, neg = 0;
+    for (const v of satVals) {
+      if (v > SAT_THRESHOLD_POS) pos++;
+      else if (v < SAT_THRESHOLD_NEG) neg++;
+      else neu++;
+    }
+    const n = satVals.length;
+
+    const third = Math.max(1, Math.floor(n / 3));
+    const firstAvg = satVals.slice(0, third).reduce((a, b) => a + b, 0) / third;
+    const lastAvg = satVals.slice(-third).reduce((a, b) => a + b, 0) / third;
+    const delta = lastAvg - firstAvg;
+    let trend, trendClass;
+    if (delta > 0.15) { trend = "Mejorando ↑"; trendClass = "up"; }
+    else if (delta < -0.15) { trend = "Empeorando ↓"; trendClass = "down"; }
+    else { trend = "Estable →"; trendClass = "flat"; }
+
+    return {
+      verdict, color, avg,
+      pctPos: (pos / n) * 100, pctNeu: (neu / n) * 100, pctNeg: (neg / n) * 100,
+      trend, trendClass, delta,
+    };
+  }
+
+  function renderVerdict() {
+    const v = computeVerdict(emoRows);
+    const label = $("verdictLabel"), sub = $("verdictSub"), trendEl = $("verdictTrend");
+    if (!v) {
+      label.textContent = "—";
+      label.style.color = "var(--text)";
+      sub.textContent = "Sin datos de satisfacción en el CSV.";
+      trendEl.textContent = "";
+      return;
+    }
+    label.textContent = v.verdict;
+    label.style.color = v.color;
+    sub.textContent = `satEMA promedio: ${(v.avg >= 0 ? "+" : "") + v.avg.toFixed(2)}`;
+    trendEl.textContent = v.trend;
+    trendEl.className = "verdict-trend " + v.trendClass;
+
+    $("vbarPos").style.width = v.pctPos.toFixed(1) + "%";
+    $("vbarNeu").style.width = v.pctNeu.toFixed(1) + "%";
+    $("vbarNeg").style.width = v.pctNeg.toFixed(1) + "%";
+    $("vbarPosPct").textContent = v.pctPos.toFixed(0) + "%";
+    $("vbarNeuPct").textContent = v.pctNeu.toFixed(0) + "%";
+    $("vbarNegPct").textContent = v.pctNeg.toFixed(0) + "%";
   }
 
   function renderSummary() {
@@ -729,12 +1003,76 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
   }
 
   // ---------------------------------------------------------------------
-  // Recorrido en el cuadrante afectivo (circumplejo)
+  // Recorrido en el cuadrante afectivo (circumplejo): cada muestra es un
+  // punto coloreado según su cuadrante; una manchita suave del mismo color
+  // debajo de cada punto hace que las zonas con más muestras se vean más
+  // intensas (densidad = tiempo ahí), sin mezclar colores entre cuadrantes
+  // vecinos (cada mancha solo profundiza su propio color).
   // ---------------------------------------------------------------------
+  const QUADRANT_DEFS = [
+    { label: "Activación positiva · alegría/entusiasmo" },
+    { label: "Activación negativa · tensión/enojo" },
+    { label: "Desactivación negativa · tristeza/abatimiento" },
+    { label: "Desactivación positiva · calma/serenidad" },
+  ];
+  const QUADRANT_COLORS = {
+    "Activación positiva · alegría/entusiasmo": "#4ade80",
+    "Activación negativa · tensión/enojo": "#ff6b6b",
+    "Desactivación negativa · tristeza/abatimiento": "#5b8dee",
+    "Desactivación positiva · calma/serenidad": "#43d9ff",
+  };
+  const NEUTRO_LABEL = "Neutro · sin activación marcada";
+  const NEUTRO_COLOR = "#9aa3c7";
+
+  function computeQuadrantPercents(rows) {
+    const counts = {};
+    let total = 0;
+    for (const r of rows) {
+      const label = r.cuadrante || "";
+      if (!label) continue;
+      counts[label] = (counts[label] || 0) + 1;
+      total++;
+    }
+    const pct = {};
+    for (const [label, count] of Object.entries(counts)) pct[label] = total ? (count / total) * 100 : 0;
+    return { pct, total };
+  }
+
+  // Respaldo si el CSV no trae la columna "cuadrante" ya calculada
+  // (no replica el detalle exacto de quadrantOf() en affect.js — le falta
+  // la zona "Neutro" cerca del origen — pero sirve como aproximación).
+  function quadrantSignOf(v, a) {
+    if (a >= 0 && v >= 0) return "Activación positiva · alegría/entusiasmo";
+    if (a >= 0 && v < 0) return "Activación negativa · tensión/enojo";
+    if (a < 0 && v < 0) return "Desactivación negativa · tristeza/abatimiento";
+    return "Desactivación positiva · calma/serenidad";
+  }
+
+  function hexToRgba(hex, alpha) {
+    const h = hex.replace("#", "");
+    const r = parseInt(h.substring(0, 2), 16);
+    const g = parseInt(h.substring(2, 4), 16);
+    const b = parseInt(h.substring(4, 6), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  function renderCircLegend(quadPct, total) {
+    const el = $("circLegend");
+    if (!el) return;
+    if (!total) { el.innerHTML = ""; return; }
+    const order = [...QUADRANT_DEFS.map((d) => d.label), NEUTRO_LABEL];
+    el.innerHTML = order.map((label) => {
+      const pct = quadPct[label] || 0;
+      const color = QUADRANT_COLORS[label] || NEUTRO_COLOR;
+      const shortLabel = label.split(" · ")[0];
+      return `<span class="item" title="${escapeHtml(label)}"><span class="sw" style="background:${color}"></span> ${escapeHtml(shortLabel)} — ${pct.toFixed(0)}%</span>`;
+    }).join("");
+  }
+
   function renderCircChart() {
     const canvas = $("circChart");
     const dpr = window.devicePixelRatio || 1;
-    const cssSize = Math.min(canvas.parentElement.clientWidth || 360, 380);
+    const cssSize = Math.min(canvas.parentElement.clientWidth || 480, 480);
     canvas.style.width = cssSize + "px";
     canvas.style.height = cssSize + "px";
     canvas.width = Math.round(cssSize * dpr);
@@ -743,9 +1081,10 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const W = cssSize, H = cssSize;
-    const cx = W / 2, cy = H / 2, R = W / 2 - 26;
+    const cx = W / 2, cy = H / 2, R = W / 2 - 34;
     ctx.clearRect(0, 0, W, H);
 
+    // --- Ejes de referencia ---
     ctx.strokeStyle = "rgba(255,255,255,0.18)";
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
@@ -765,22 +1104,52 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
     ctx.fillText("valencia −", cx - 6, cy - 4);
 
     const pts = emoRows.filter((r) => r.valencia !== null && r.arousal !== null);
+    const { pct: quadPct, total: quadTotal } = computeQuadrantPercents(emoRows);
+    $("circNeutroHint").textContent = quadTotal
+      ? `${(quadPct[NEUTRO_LABEL] || 0).toFixed(0)}% del tiempo fue neutro (muy cerca del centro)`
+      : "Sin datos de cuadrante en el CSV.";
+    renderCircLegend(quadPct, quadTotal);
+
     const n = pts.length;
     if (n === 0) return;
 
-    // Trazo: más transparente al inicio, más intenso al final.
+    const colorOf = (p) => QUADRANT_COLORS[p.cuadrante] || (p.cuadrante === NEUTRO_LABEL ? NEUTRO_COLOR : QUADRANT_COLORS[quadrantSignOf(p.valencia, p.arousal)]);
+
+    // --- Manchas de densidad: una por muestra, mismo color que su punto ---
+    const blobR = Math.max(14, R * 0.16);
+    for (const p of pts) {
+      const color = colorOf(p);
+      const px = cx + p.valencia * R, py = cy - p.arousal * R;
+      const grad = ctx.createRadialGradient(px, py, 0, px, py, blobR);
+      grad.addColorStop(0, hexToRgba(color, 0.14));
+      grad.addColorStop(1, hexToRgba(color, 0));
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(px, py, blobR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // --- Trazo del recorrido: muy tenue, solo referencia del orden ---
     for (let i = 1; i < n; i++) {
       const a0 = pts[i - 1], a1 = pts[i];
-      const alpha = 0.15 + 0.6 * (i / n);
-      ctx.strokeStyle = `rgba(108,140,255,${alpha.toFixed(2)})`;
-      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = "rgba(108,140,255,0.12)";
+      ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(cx + a0.valencia * R, cy - a0.arousal * R);
       ctx.lineTo(cx + a1.valencia * R, cy - a1.arousal * R);
       ctx.stroke();
     }
-    // Punto inicial y final destacados.
-    const drawDot = (p, color, label) => {
+
+    // --- Puntos individuales, nítidos, encima del mapa de calor ---
+    for (const p of pts) {
+      ctx.fillStyle = hexToRgba(colorOf(p), 0.85);
+      ctx.beginPath();
+      ctx.arc(cx + p.valencia * R, cy - p.arousal * R, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // --- Inicio y fin destacados (igual que antes) ---
+    const drawDot = (p, color) => {
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.arc(cx + p.valencia * R, cy - p.arousal * R, 5, 0, Math.PI * 2);
@@ -792,31 +1161,299 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
   }
 
   // ---------------------------------------------------------------------
-  // Tiempo por cuadrante (a partir de la columna "cuadrante" ya calculada
-  // por app.js / affect.js — evitamos reimplementar quadrantOf()).
+  // Orientación de la cabeza: roll (confiable) + yaw/pitch (aproximados).
   // ---------------------------------------------------------------------
-  function renderQuadBars() {
-    const counts = {};
-    let total = 0;
-    for (const r of emoRows) {
-      const label = r.cuadrante || "Sin dato";
-      counts[label] = (counts[label] || 0) + 1;
-      total++;
+  function renderHeadChart() {
+    const canvas = $("headChart");
+    const hintEl = $("headHint");
+    const legendEl = $("headLegend");
+    const rows = emoRows.filter((r) => r.roll !== null || r.yaw !== null || r.pitch !== null);
+
+    if (rows.length === 0) {
+      hintEl.textContent = "Sin datos de orientación en el CSV.";
+      legendEl.innerHTML = "";
+      const ctx0 = canvas.getContext("2d");
+      ctx0.clearRect(0, 0, canvas.width, canvas.height);
+      return;
     }
-    const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-    $("quadBars").innerHTML = entries.map(([label, count]) => {
-      const pct = total ? (count / total) * 100 : 0;
-      return `
-        <div class="quad-bar-row">
-          <span class="qlabel" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
-          <span class="quad-bar-track"><span class="quad-bar-fill" style="width:${pct.toFixed(1)}%"></span></span>
-          <span class="quad-bar-pct">${pct.toFixed(0)}%</span>
-        </div>`;
-    }).join("") || '<p class="coverage-note">Sin datos de cuadrante en el CSV.</p>';
+
+    const yawRows = emoRows.filter((r) => r.yaw !== null);
+    const frontalPct = yawRows.length
+      ? (yawRows.filter((r) => Math.abs(r.yaw) < 15).length / yawRows.length) * 100
+      : null;
+    hintEl.textContent = frontalPct !== null
+      ? `${frontalPct.toFixed(0)}% del tiempo "de frente" (|yaw| < 15°)`
+      : "";
+
+    const { ctx, W, H } = setupCanvas(canvas, 220);
+    ctx.clearRect(0, 0, W, H);
+
+    const padL = 34, padR = 14, padT = 14, padB = 26;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const durationSec = (emoRows[emoRows.length - 1].t - emoRows[0].t) / 1000 || 1;
+    const xFor = (sec) => padL + (sec / durationSec) * plotW;
+
+    const allVals = [];
+    for (const r of rows) {
+      if (r.roll !== null) allVals.push(r.roll);
+      if (r.yaw !== null) allVals.push(r.yaw);
+      if (r.pitch !== null) allVals.push(r.pitch);
+    }
+    const maxAbs = Math.max(10, ...allVals.map((v) => Math.abs(v)));
+    const domain = maxAbs * 1.15;
+    const yFor = (v) => padT + plotH / 2 - (v / domain) * (plotH / 2 - 6);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, yFor(0)); ctx.lineTo(W - padR, yFor(0)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB); ctx.stroke();
+
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "right";
+    [domain, domain / 2, 0, -domain / 2, -domain].forEach((v) => {
+      ctx.fillText(Math.round(v) + "°", padL - 6, yFor(v) + 3);
+    });
+    ctx.textAlign = "center";
+    const nTicks = Math.min(6, Math.max(2, Math.round(durationSec / 60)));
+    for (let i = 0; i <= nTicks; i++) {
+      const sec = (durationSec * i) / nTicks;
+      ctx.fillText(fmtElapsed(sec), xFor(sec), H - 8);
+    }
+
+    const series = [
+      { key: "roll", color: "#6c8cff" },
+      { key: "yaw", color: "#ffb454" },
+      { key: "pitch", color: "#b06cff" },
+    ];
+    for (const s of series) {
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      let started = false;
+      for (const r of emoRows) {
+        if (r[s.key] === null) { started = false; continue; }
+        const secElapsed = (r.t - emoRows[0].t) / 1000;
+        const x = xFor(secElapsed), y = yFor(r[s.key]);
+        if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
+      }
+      ctx.stroke();
+    }
+
+    legendEl.innerHTML =
+      '<span class="item"><span class="sw" style="background:#6c8cff"></span> Roll (confiable)</span>' +
+      '<span class="item"><span class="sw" style="background:#ffb454"></span> Yaw (aprox.)</span>' +
+      '<span class="item"><span class="sw" style="background:#b06cff"></span> Pitch (aprox.)</span>';
   }
+
+  // ---------------------------------------------------------------------
+  // Autoevaluación de la persona: no viene del CSV, el analista la marca
+  // a mano después de preguntarle. Se compara contra el veredicto que
+  // calculó el sistema (computeVerdict), para ver qué tan cerca estuvo.
+  // ---------------------------------------------------------------------
+  let selfReport = null; // "neg" | "neu" | "pos" | null
+  const SR_LABELS = { neg: "Insatisfecho", neu: "Neutro", pos: "Satisfecho" };
+
+  document.querySelectorAll("#selfReportBtns .sr-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      selfReport = btn.dataset.val;
+      document.querySelectorAll("#selfReportBtns .sr-btn").forEach((b) => b.classList.toggle("active", b === btn));
+      renderSelfReportCompare();
+    });
+  });
+
+  function renderSelfReportCompare() {
+    const el = $("selfReportCompare");
+    const dlBtn = $("downloadRegistroBtn");
+    if (!el) return;
+    if (selfReport === null) {
+      el.innerHTML = "";
+      if (dlBtn) dlBtn.style.display = "none";
+      return;
+    }
+
+    const v = computeVerdict(emoRows);
+    if (!v) {
+      el.innerHTML = `<div class="sr-compare"><span>Autoevaluación: <b>${SR_LABELS[selfReport]}</b> — no hay veredicto del sistema para comparar (sin datos de satisfacción en el CSV).</span></div>`;
+    } else {
+      const sysKey = v.verdict === "Satisfecho" ? "pos" : v.verdict === "Insatisfecho" ? "neg" : "neu";
+      const isMatch = sysKey === selfReport;
+      el.innerHTML = `
+        <div class="sr-compare ${isMatch ? "match" : "mismatch"}">
+          <span class="sr-icon">${isMatch ? "✅" : "⚠️"}</span>
+          <span>Autoevaluación: <b>${SR_LABELS[selfReport]}</b> · Sistema: <b>${v.verdict}</b> — ${isMatch ? "coinciden" : "no coinciden"}</span>
+        </div>`;
+    }
+    if (dlBtn) dlBtn.style.display = "inline-block";
+  }
+
+  // Descarga UNA prueba = UN archivo, para que no dependa de nada guardado
+  // en el navegador (si se reinicia o se borra la caché, no se pierde nada
+  // ya descargado).
+  function saveCSV(csv, filename) {
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function csvCell(v) {
+    return `"${String(v).replace(/"/g, '""')}"`;
+  }
+
+  $("downloadRegistroBtn").addEventListener("click", () => {
+    if (selfReport === null) return;
+    const v = computeVerdict(emoRows);
+    const durationSec = emoRows.length > 1 ? (emoRows[emoRows.length - 1].t - emoRows[0].t) / 1000 : 0;
+    const sysKey = v ? (v.verdict === "Satisfecho" ? "pos" : v.verdict === "Insatisfecho" ? "neg" : "neu") : "";
+    const coincide = v ? (sysKey === selfReport ? "si" : "no") : "";
+
+    const header = [
+      "fecha_registro", "archivo_emociones", "archivo_momentos",
+      "duracion_sesion_seg", "muestras", "veredicto_sistema", "satEMA_promedio",
+      "tendencia", "autoevaluacion_persona", "coincide",
+      "momentos_positivos", "momentos_negativos",
+    ];
+    const row = [
+      new Date().toISOString(),
+      emoFileName || "",
+      momFileName || "",
+      durationSec.toFixed(1),
+      emoRows.length,
+      v ? v.verdict : "",
+      v ? v.avg.toFixed(4) : "",
+      v ? v.trend : "",
+      SR_LABELS[selfReport],
+      coincide,
+      momRows.filter((m) => m.tipo === "pos").length,
+      momRows.filter((m) => m.tipo === "neg").length,
+    ];
+    const csv = [header.map(csvCell).join(","), row.map(csvCell).join(",")].join("\r\n");
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    saveCSV(csv, `registro_prueba_${stamp}.csv`);
+  });
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  // ---------------------------------------------------------------------
+  // Causas de los momentos clave: dos donas separadas (insatisfacción /
+  // satisfacción), cada una con sus propios "disparadores" (causa).
+  // Nota: son 2 grupos independientes, cada uno suma 100% por su cuenta —
+  // por eso van en círculos separados y no anidados en un solo donut.
+  // Solo cliente por ahora — no se mide al asesor todavía.
+  // ---------------------------------------------------------------------
+  const DONUT_NEG_COLORS = ["#ff6b6b", "#ffb454", "#ff8fa3", "#9aa3c7"];
+  const DONUT_POS_COLORS = ["#4ade80", "#22c55e", "#43d9ff", "#9aa3c7"];
+
+  function computeTriggerEntries(rows, tipo) {
+    const counts = {};
+    for (const m of rows) {
+      if (m.tipo !== tipo) continue;
+      const key = m.trigger || "Sin disparador";
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    return Object.entries(counts)
+      .map(([trigger, count]) => ({ trigger, count }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  function drawCombinedDonut(canvas, entries, total) {
+    const dpr = window.devicePixelRatio || 1;
+    const cssSize = Math.min(canvas.parentElement.clientWidth || 260, 260);
+    canvas.style.width = cssSize + "px";
+    canvas.style.height = cssSize + "px";
+    canvas.width = Math.round(cssSize * dpr);
+    canvas.height = Math.round(cssSize * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const W = cssSize, H = cssSize;
+    ctx.clearRect(0, 0, W, H);
+    if (total === 0) return;
+
+    const cx = W / 2, cy = H / 2, rOuter = W / 2 - 8, rInner = rOuter * 0.58;
+    let angle = -Math.PI / 2;
+    entries.forEach((e) => {
+      const slice = (e.count / total) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, rOuter, angle, angle + slice);
+      ctx.closePath();
+      ctx.fillStyle = e.color;
+      ctx.fill();
+      angle += slice;
+    });
+    // Recorta el centro para dejar el "agujero" de la dona.
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.beginPath();
+    ctx.arc(cx, cy, rInner, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+
+    ctx.fillStyle = "#e8ebff";
+    ctx.font = "700 22px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(total), cx, cy - 6);
+    ctx.font = "10px sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.fillText(total === 1 ? "momento" : "momentos", cx, cy + 12);
+  }
+
+  function renderMomentsDonuts() {
+    const hintEl = $("momentsDonutHint");
+    const canvas = $("momentsDonut");
+    const splitEl = $("momentsDonutSplit");
+    const legendEl = $("momentsDonutLegend");
+
+    if (momRows.length === 0) {
+      hintEl.textContent = "Carga momentos_clave_*.csv para ver esta gráfica.";
+      splitEl.innerHTML = "";
+      legendEl.innerHTML = "";
+      canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+
+    const negEntries = computeTriggerEntries(momRows, "neg");
+    const posEntries = computeTriggerEntries(momRows, "pos");
+    const negTotal = negEntries.reduce((a, e) => a + e.count, 0);
+    const posTotal = posEntries.reduce((a, e) => a + e.count, 0);
+    const total = negTotal + posTotal;
+
+    hintEl.textContent = `${total} momento(s) detectados en la sesión`;
+
+    // Un solo pastel: rojos (insatisfacción) primero, verdes (satisfacción)
+    // después — así el tamaño de cada "mitad" ya muestra a simple vista
+    // cuál predominó, sin tener que comparar dos gráficas separadas.
+    const combined = [
+      ...negEntries.map((e, i) => ({ ...e, color: DONUT_NEG_COLORS[i % DONUT_NEG_COLORS.length] })),
+      ...posEntries.map((e, i) => ({ ...e, color: DONUT_POS_COLORS[i % DONUT_POS_COLORS.length] })),
+    ];
+    drawCombinedDonut(canvas, combined, total);
+
+    splitEl.innerHTML = `
+      <div class="mds-item neg">
+        <span class="mds-val">${negTotal}</span>
+        <span class="mds-label">Insatisfacción · ${total ? ((negTotal / total) * 100).toFixed(0) : 0}%</span>
+      </div>
+      <div class="mds-item pos">
+        <span class="mds-val">${posTotal}</span>
+        <span class="mds-label">Satisfacción · ${total ? ((posTotal / total) * 100).toFixed(0) : 0}%</span>
+      </div>`;
+
+    legendEl.innerHTML = combined.length
+      ? combined.map((e) => {
+          const pct = total ? (e.count / total) * 100 : 0;
+          return `<span class="item"><span class="sw" style="background:${e.color}"></span> ${escapeHtml(e.trigger)} — ${e.count} (${pct.toFixed(0)}%)</span>`;
+        }).join("")
+      : '<span class="item" style="color:var(--muted)">Sin momentos clave en la sesión.</span>';
   }
 
   // ---------------------------------------------------------------------
