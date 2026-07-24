@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Elicitación de emociones · AURA × IRIS</title>
+<style>
+:root {
+  --bg: #0f1221;
+  --panel: #1a1f37;
+  --panel-2: #202748;
+  --accent: #6c8cff;
+  --text: #e8ebff;
+  --muted: #9aa3c7;
+  --good: #4ade80;
+  --bad: #ff6b6b;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+  background: radial-gradient(1200px 600px at 50% -10%, #20264a, var(--bg));
+  color: var(--text);
+  min-height: 100vh;
+}
+.screen { display: none; min-height: 100vh; }
+.screen.active { display: flex; flex-direction: column; }
+
+/* --- Cabecera fija con salida de emergencia --- */
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 22px; flex: 0 0 auto;
+}
+.topbar .brand { font-weight: 800; font-size: 0.95rem; color: var(--muted); }
+.stop-btn {
+  background: rgba(255,107,107,0.1); border: 1px solid rgba(255,107,107,0.4);
+  color: var(--bad); font-size: 0.8rem; font-weight: 700; padding: 8px 14px;
+  border-radius: 8px; cursor: pointer;
+}
+.stop-btn:hover { background: rgba(255,107,107,0.2); }
+
+/* --- Contenedor central genérico --- */
+.center-wrap {
+  flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.card {
+  background: var(--panel); border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 16px; padding: 32px; max-width: 640px; width: 100%;
+}
+h1 { font-size: 1.5rem; margin: 0 0 6px; }
+h2 { font-size: 1.1rem; margin: 0 0 14px; }
+p { color: var(--muted); line-height: 1.6; font-size: 0.92rem; }
+.step-count { color: var(--accent); font-weight: 700; font-size: 0.85rem; margin-bottom: 4px; }
+
+label.check {
+  display: flex; align-items: flex-start; gap: 10px; margin: 18px 0;
+  font-size: 0.88rem; color: var(--text); cursor: pointer;
+}
+label.check input { margin-top: 3px; }
+
+.btn {
+  background: var(--accent); color: #fff; border: none; font-weight: 700;
+  font-size: 0.92rem; padding: 12px 22px; border-radius: 10px; cursor: pointer;
+  margin-top: 10px;
+}
+.btn:hover { filter: brightness(1.08); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.secondary { background: var(--panel-2); color: var(--text); border: 1px solid rgba(255,255,255,0.1); }
+
+.folder-status { font-size: 0.85rem; margin-top: 10px; }
+.folder-status.ok { color: var(--good); }
+.folder-status.err { color: var(--bad); }
+.missing-list { font-size: 0.82rem; color: var(--bad); margin-top: 6px; line-height: 1.5; }
+
+.resume-box {
+  background: var(--panel-2); border: 1px solid rgba(108,140,255,0.3);
+  border-radius: 10px; padding: 14px; margin-bottom: 18px; font-size: 0.85rem;
+}
+.resume-box .row { display: flex; gap: 10px; margin-top: 10px; }
+
+/* --- Pantalla de fijación (reemplaza a los neutrales de video) --- */
+#screenFixation .center-wrap { padding: 0; }
+.fixation-wrap {
+  width: 100%; height: 100vh; background: #000;
+  display: flex; align-items: center; justify-content: center; flex-direction: column;
+}
+.fixation-cross { font-size: 3rem; color: rgba(255,255,255,0.6); line-height: 1; }
+.fixation-timer { margin-top: 18px; font-size: 0.8rem; color: rgba(255,255,255,0.25); }
+
+/* --- Reproductor de video --- */
+#screenPlayer .center-wrap { padding: 0; }
+video#clipVideo {
+  width: 100%; height: 100vh; object-fit: contain; background: #000;
+}
+
+/* --- Encuesta post-clip --- */
+.survey-card { max-width: 560px; }
+.q-block { margin-bottom: 20px; }
+.q-label { font-size: 0.9rem; font-weight: 700; margin-bottom: 10px; display: block; }
+.opt-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.opt-btn {
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.14);
+  color: var(--muted); font-size: 0.82rem; font-weight: 600; padding: 8px 14px;
+  border-radius: 999px; cursor: pointer;
+}
+.opt-btn:hover { border-color: rgba(255,255,255,0.3); color: var(--text); }
+.opt-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.scale-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.scale-row .end-label { font-size: 0.72rem; color: var(--muted); max-width: 80px; }
+.scale-row .opts { display: flex; gap: 6px; }
+.scale-btn {
+  width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.04); color: var(--text); cursor: pointer; font-size: 0.8rem;
+}
+.scale-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.other-input {
+  width: 100%; margin-top: 8px; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.03);
+  color: var(--text); font-size: 0.85rem; display: none;
+}
+
+/* --- Fin / salida --- */
+.big-icon { font-size: 2.4rem; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+
+  <!-- ============ PANTALLA 1: INTRO / CONSENTIMIENTO / CARPETA ============ -->
+  <div class="screen active" id="screenIntro">
+    <div class="topbar"><span class="brand">AURA × IRIS — Elicitación de emociones</span></div>
+    <div class="center-wrap">
+      <div class="card">
+        <div id="resumeBox" class="resume-box" style="display:none;">
+          <b>Encontramos una sesión sin terminar</b> (<span id="resumeInfo"></span>).
+          <div class="row">
+            <button class="btn" id="btnResume">Continuar esa sesión</button>
+            <button class="btn secondary" id="btnDiscard">Empezar una nueva</button>
+          </div>
+        </div>
+
+        <h1>Antes de empezar</h1>
+        <p>
+          Vas a ver una serie de clips cortos de películas, con distinto tono emocional
+          (incluye momentos de tensión, tristeza y algo de contenido fuerte). Después de
+          cada uno, unas preguntas rápidas sobre cómo te sentiste. Puedes detenerte
+          cuando quieras — hay un botón de salida visible en todo momento, y nadie va a
+          juzgar tus respuestas.
+        </p>
+        <label class="check">
+          <input type="checkbox" id="chkConsent" />
+          Entiendo lo anterior y quiero participar.
+        </label>
+
+        <h2 style="margin-top:24px;">Carpeta de los clips</h2>
+        <p>Selecciona la carpeta donde ya tienes descargados los videos (LATEMO-E).</p>
+        <button class="btn secondary" id="btnPickFolder">📁 Seleccionar carpeta</button>
+        <input type="file" id="folderInput" webkitdirectory directory multiple style="display:none;" />
+        <div class="folder-status" id="folderStatus"></div>
+        <div class="missing-list" id="missingList"></div>
+
+        <div style="margin-top:22px;">
+          <button class="btn" id="btnStart" disabled>Comenzar sesión</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ PANTALLA DE FIJACIÓN (descanso entre clips) ============ -->
+  <div class="screen" id="screenFixation">
+    <div class="topbar">
+      <span class="brand" id="fixationStepLabel"></span>
+      <button class="stop-btn" id="btnStopFixation">■ Detener sesión</button>
+    </div>
+    <div class="center-wrap">
+      <div class="fixation-wrap">
+        <div class="fixation-cross">+</div>
+        <div class="fixation-timer" id="fixationTimer"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ PANTALLA 2: REPRODUCTOR ============ -->
+  <div class="screen" id="screenPlayer">
+    <div class="topbar">
+      <span class="brand" id="playerStepLabel"></span>
+      <button class="stop-btn" id="btnStopPlayer">■ Detener sesión</button>
+    </div>
+    <div class="center-wrap">
+      <video id="clipVideo" playsinline></video>
+    </div>
+  </div>
+
+  <!-- ============ PANTALLA 3: ENCUESTA ============ -->
+  <div class="screen" id="screenSurvey">
+    <div class="topbar">
+      <span class="brand" id="surveyStepLabel"></span>
+      <button class="stop-btn" id="btnStopSurvey">■ Detener sesión</button>
+    </div>
+    <div class="center-wrap">
+      <div class="card survey-card">
+        <div class="step-count" id="surveyProgress"></div>
+        <h1>¿Cómo te sentiste con ese clip?</h1>
+
+        <div class="q-block">
+          <span class="q-label">1. ¿Qué emoción sentiste más fuerte?</span>
+          <div class="opt-row" id="q1Options">
+            <button type="button" class="opt-btn" data-val="Alegría">Alegría</button>
+            <button type="button" class="opt-btn" data-val="Ira">Ira</button>
+            <button type="button" class="opt-btn" data-val="Miedo">Miedo</button>
+            <button type="button" class="opt-btn" data-val="Tristeza">Tristeza</button>
+            <button type="button" class="opt-btn" data-val="Asco">Asco</button>
+            <button type="button" class="opt-btn" data-val="Neutral">Ninguna en particular</button>
+            <button type="button" class="opt-btn" data-val="Otra">Otra</button>
+          </div>
+          <input type="text" class="other-input" id="q1Other" placeholder="¿Cuál?" />
+        </div>
+
+        <div class="q-block">
+          <span class="q-label">2. ¿Qué tan intensa fue?</span>
+          <div class="scale-row">
+            <span class="end-label">Nada intensa</span>
+            <div class="opts" id="q2Options">
+              <button type="button" class="scale-btn" data-val="1">1</button>
+              <button type="button" class="scale-btn" data-val="2">2</button>
+              <button type="button" class="scale-btn" data-val="3">3</button>
+              <button type="button" class="scale-btn" data-val="4">4</button>
+              <button type="button" class="scale-btn" data-val="5">5</button>
+            </div>
+            <span class="end-label" style="text-align:right;">Muy intensa</span>
+          </div>
+        </div>
+
+        <div class="q-block">
+          <span class="q-label">3. ¿Qué tan agradable o desagradable te sentiste?</span>
+          <div class="scale-row">
+            <span class="end-label">Muy desagradable</span>
+            <div class="opts" id="q3Options">
+              <button type="button" class="scale-btn" data-val="1">1</button>
+              <button type="button" class="scale-btn" data-val="2">2</button>
+              <button type="button" class="scale-btn" data-val="3">3</button>
+              <button type="button" class="scale-btn" data-val="4">4</button>
+              <button type="button" class="scale-btn" data-val="5">5</button>
+              <button type="button" class="scale-btn" data-val="6">6</button>
+              <button type="button" class="scale-btn" data-val="7">7</button>
+              <button type="button" class="scale-btn" data-val="8">8</button>
+              <button type="button" class="scale-btn" data-val="9">9</button>
+            </div>
+            <span class="end-label" style="text-align:right;">Muy agradable</span>
+          </div>
+        </div>
+
+        <div class="q-block">
+          <span class="q-label">4. ¿Qué tan alterado/a o tranquilo/a te sentiste?</span>
+          <div class="scale-row">
+            <span class="end-label">Muy tranquilo/a</span>
+            <div class="opts" id="q4Options">
+              <button type="button" class="scale-btn" data-val="1">1</button>
+              <button type="button" class="scale-btn" data-val="2">2</button>
+              <button type="button" class="scale-btn" data-val="3">3</button>
+              <button type="button" class="scale-btn" data-val="4">4</button>
+              <button type="button" class="scale-btn" data-val="5">5</button>
+              <button type="button" class="scale-btn" data-val="6">6</button>
+              <button type="button" class="scale-btn" data-val="7">7</button>
+              <button type="button" class="scale-btn" data-val="8">8</button>
+              <button type="button" class="scale-btn" data-val="9">9</button>
+            </div>
+            <span class="end-label" style="text-align:right;">Muy alterado/a</span>
+          </div>
+        </div>
+
+        <div class="q-block">
+          <span class="q-label">5. ¿Ya habías visto este clip antes?</span>
+          <div class="opt-row" id="q5Options">
+            <button type="button" class="opt-btn" data-val="Si">Sí</button>
+            <button type="button" class="opt-btn" data-val="No">No</button>
+          </div>
+        </div>
+
+        <button class="btn" id="btnContinue" disabled>Continuar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ PANTALLA 4: FIN ============ -->
+  <div class="screen" id="screenDone">
+    <div class="center-wrap">
+      <div class="card" style="text-align:center;">
+        <div class="big-icon">✅</div>
+        <h1>Sesión completada</h1>
+        <p id="doneSummary"></p>
+        <p>Ya se descargó el archivo con todas tus respuestas. Si no se descargó solo, usa el botón de abajo.</p>
+        <button class="btn" id="btnDownloadAgain">⬇ Descargar de nuevo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ PANTALLA 5: SALIDA ANTICIPADA ============ -->
+  <div class="screen" id="screenStopped">
+    <div class="center-wrap">
+      <div class="card" style="text-align:center;">
+        <div class="big-icon">🛑</div>
+        <h1>Sesión detenida</h1>
+        <p id="stoppedSummary"></p>
+        <p>Gracias por participar. Lo que alcanzaste a contestar ya se guardó y se descargó.</p>
+        <button class="btn" id="btnDownloadAgainStop">⬇ Descargar de nuevo</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  function $(id) { return document.getElementById(id); }
+  function showScreen(id) {
+    document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
+    $(id).classList.add("active");
+  }
+
+  // -----------------------------------------------------------------------
+  // Catálogo de clips (LATEMO-E) y protocolo de sesión.
+  // Se empareja por el código entre paréntesis en el nombre de archivo
+  // (ej. "(LPR)"), no por el nombre completo — así no importan tildes,
+  // espacios extra o mayúsculas distintas en cómo vengan nombrados los
+  // archivos descargados.
+  // -----------------------------------------------------------------------
+  const CATALOG = {
+    LPR:  { label: "The Proposal", categoria: "diversion" },
+    CON4: { label: "The Conjuring 4", categoria: "miedo" },
+    PTE:  { label: "Planet Terror", categoria: "asco" },
+    "12A2": { label: "12 Years a Slave 2", categoria: "ira" },
+    NPR:  { label: "The Boy in the Striped Pajamas", categoria: "tristeza" },
+  };
+
+  const FIXATION_SECONDS = 5;
+
+  // Orden de la sesión: alterna fijación (60s, sin encuesta) con cada uno
+  // de los 5 clips objetivo (con encuesta). Ya no usa videos "neutrales" —
+  // la fijación cumple el mismo rol de washout, en mucho menos tiempo.
+  const PROTOCOL = [
+    { type: "fixation" },
+    { type: "clip", code: "LPR" },
+    { type: "fixation" },
+    { type: "clip", code: "CON4" },
+    { type: "fixation" },
+    { type: "clip", code: "PTE" },
+    { type: "fixation" },
+    { type: "clip", code: "12A2" },
+    { type: "fixation" },
+    { type: "clip", code: "NPR" },
+    { type: "fixation" },
+  ];
+
+  let fileMap = {};       // code -> File
+  let sessionId = null;
+  let stepIndex = 0;
+  let rows = [];
+  let currentStart = null;
+  let answers = {};
+
+  // -----------------------------------------------------------------------
+  // Persistencia: se guarda en localStorage después de cada clip, para no
+  // perder nada si se cierra la pestaña o se va la luz a medio camino.
+  // -----------------------------------------------------------------------
+  function saveProgress() {
+    localStorage.setItem("elic_active_session", sessionId);
+    localStorage.setItem("elic_" + sessionId + "_rows", JSON.stringify(rows));
+    localStorage.setItem("elic_" + sessionId + "_stepIndex", String(stepIndex));
+  }
+
+  function clearProgress() {
+    localStorage.removeItem("elic_" + sessionId + "_rows");
+    localStorage.removeItem("elic_" + sessionId + "_stepIndex");
+    if (localStorage.getItem("elic_active_session") === sessionId) {
+      localStorage.removeItem("elic_active_session");
+    }
+  }
+
+  function checkForResume() {
+    const prev = localStorage.getItem("elic_active_session");
+    if (!prev) return;
+    const prevRowsRaw = localStorage.getItem("elic_" + prev + "_rows");
+    const prevStepRaw = localStorage.getItem("elic_" + prev + "_stepIndex");
+    if (!prevRowsRaw || !prevStepRaw) return;
+    const prevStep = parseInt(prevStepRaw, 10);
+    if (isNaN(prevStep) || prevStep >= PROTOCOL.length) return;
+
+    $("resumeBox").style.display = "block";
+    $("resumeInfo").textContent = `paso ${prevStep + 1} de ${PROTOCOL.length}`;
+
+    $("btnResume").onclick = () => {
+      sessionId = prev;
+      rows = JSON.parse(prevRowsRaw);
+      stepIndex = prevStep;
+      $("resumeBox").style.display = "none";
+      maybeEnableStart();
+    };
+    $("btnDiscard").onclick = () => {
+      localStorage.removeItem("elic_" + prev + "_rows");
+      localStorage.removeItem("elic_" + prev + "_stepIndex");
+      localStorage.removeItem("elic_active_session");
+      $("resumeBox").style.display = "none";
+    };
+  }
+
+  // -----------------------------------------------------------------------
+  // Selección de carpeta
+  // -----------------------------------------------------------------------
+  $("btnPickFolder").addEventListener("click", () => $("folderInput").click());
+
+  $("folderInput").addEventListener("change", (e) => {
+    const files = Array.from(e.target.files || []);
+    fileMap = {};
+    const neededCodes = Object.keys(CATALOG);
+    for (const code of neededCodes) {
+      const marker = "(" + code + ")";
+      const match = files.find((f) => f.name.toUpperCase().includes(marker.toUpperCase()));
+      if (match) fileMap[code] = match;
+    }
+    const missing = neededCodes.filter((c) => !fileMap[c]);
+    const statusEl = $("folderStatus");
+    const missingEl = $("missingList");
+    if (missing.length === 0) {
+      statusEl.textContent = `✓ Carpeta válida — se encontraron los ${neededCodes.length} clips necesarios.`;
+      statusEl.className = "folder-status ok";
+      missingEl.textContent = "";
+    } else {
+      statusEl.textContent = `✗ Faltan ${missing.length} clip(s) en esa carpeta.`;
+      statusEl.className = "folder-status err";
+      missingEl.textContent = "Faltan: " + missing.map((c) => `${CATALOG[c].label} (${c})`).join(", ");
+    }
+    maybeEnableStart();
+  });
+
+  $("chkConsent").addEventListener("change", maybeEnableStart);
+
+  function maybeEnableStart() {
+    const neededCodes = Object.keys(CATALOG);
+    const allPresent = neededCodes.every((c) => fileMap[c]);
+    $("btnStart").disabled = !(allPresent && $("chkConsent").checked);
+  }
+
+  // -----------------------------------------------------------------------
+  // Arranque de sesión
+  // -----------------------------------------------------------------------
+  $("btnStart").addEventListener("click", () => {
+    if (!sessionId) {
+      sessionId = new Date().toISOString().replace(/[:.]/g, "-");
+      rows = [];
+      stepIndex = 0;
+    }
+    playStep(stepIndex);
+  });
+
+  let sessionStopped = false;
+  let fixationTimeoutId = null;
+
+  function playStep(i) {
+    if (i >= PROTOCOL.length) { finishSession(); return; }
+    const step = PROTOCOL[i];
+    if (step.type === "fixation") { playFixation(i, step); return; }
+    playClip(i, step);
+  }
+
+  function playFixation(i, step) {
+    showScreen("screenFixation");
+    $("fixationStepLabel").textContent = `Paso ${i + 1} de ${PROTOCOL.length} — descanso`;
+    let remaining = FIXATION_SECONDS;
+    $("fixationTimer").textContent = remaining + "s";
+    const start = new Date();
+
+    const tickInterval = setInterval(() => {
+      remaining -= 1;
+      $("fixationTimer").textContent = Math.max(0, remaining) + "s";
+    }, 1000);
+
+    fixationTimeoutId = setTimeout(() => {
+      clearInterval(tickInterval);
+      if (sessionStopped) return;
+      const end = new Date();
+      rows.push({
+        paso: i + 1,
+        archivo: "",
+        codigo: "",
+        categoria: "fijacion",
+        replica: "",
+        timestamp_inicio_iso: start.toISOString(),
+        timestamp_fin_iso: end.toISOString(),
+        emocion_reportada: "",
+        emocion_otra_texto: "",
+        intensidad_1a5: "",
+        valencia_1a9: "",
+        activacion_1a9: "",
+        ya_visto: "",
+      });
+      stepIndex = i + 1;
+      saveProgress();
+      playStep(stepIndex);
+    }, FIXATION_SECONDS * 1000);
+  }
+
+  function playClip(i, step) {
+    const info = CATALOG[step.code];
+    const file = fileMap[step.code];
+    showScreen("screenPlayer");
+    $("playerStepLabel").textContent = `Paso ${i + 1} de ${PROTOCOL.length} — ${info.label}`;
+
+    const video = $("clipVideo");
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    video.src = URL.createObjectURL(file);
+    video.controls = false;
+
+    currentStart = new Date();
+    video.onended = () => {
+      const endTime = new Date();
+      answers = {};
+      showSurvey(i, step, info, currentStart, endTime);
+    };
+    video.play().catch(() => {
+      // Si el navegador bloquea el autoplay con sonido, reintenta con un
+      // clic — no debería pasar tras la interacción de "Comenzar sesión",
+      // pero por si acaso no dejamos la pantalla trabada en silencio.
+      video.controls = true;
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // Encuesta post-clip
+  // -----------------------------------------------------------------------
+  function wireOptionGroup(containerId, key) {
+    const buttons = $(containerId).querySelectorAll("[data-val]");
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        buttons.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        answers[key] = btn.dataset.val;
+        if (key === "emocion") {
+          $("q1Other").style.display = btn.dataset.val === "Otra" ? "block" : "none";
+        }
+        checkSurveyComplete();
+      });
+    });
+  }
+  wireOptionGroup("q1Options", "emocion");
+  wireOptionGroup("q2Options", "intensidad");
+  wireOptionGroup("q3Options", "valencia");
+  wireOptionGroup("q4Options", "activacion");
+  wireOptionGroup("q5Options", "yaVisto");
+  $("q1Other").addEventListener("input", (e) => { answers.emocionOtra = e.target.value; });
+
+  function checkSurveyComplete() {
+    const required = ["emocion", "intensidad", "valencia", "activacion", "yaVisto"];
+    const ok = required.every((k) => answers[k] !== undefined);
+    $("btnContinue").disabled = !ok;
+  }
+
+  let pendingStepData = null;
+
+  function showSurvey(i, step, info, startTime, endTime) {
+    pendingStepData = { i, step, info, startTime, endTime };
+    // Reinicia selección visual de la encuesta.
+    document.querySelectorAll(".opt-btn, .scale-btn").forEach((b) => b.classList.remove("active"));
+    $("q1Other").style.display = "none";
+    $("q1Other").value = "";
+    answers = {};
+    $("btnContinue").disabled = true;
+
+    $("surveyProgress").textContent = `Clip ${i + 1} de ${PROTOCOL.length} — ${info.label}`;
+    $("surveyStepLabel").textContent = `Clip ${i + 1} de ${PROTOCOL.length}`;
+    showScreen("screenSurvey");
+  }
+
+  $("btnContinue").addEventListener("click", () => {
+    const { i, step, info, startTime, endTime } = pendingStepData;
+    rows.push({
+      paso: i + 1,
+      archivo: info.label,
+      codigo: step.code,
+      categoria: info.categoria,
+      replica: "",
+      timestamp_inicio_iso: startTime.toISOString(),
+      timestamp_fin_iso: endTime.toISOString(),
+      emocion_reportada: answers.emocion,
+      emocion_otra_texto: answers.emocionOtra || "",
+      intensidad_1a5: answers.intensidad,
+      valencia_1a9: answers.valencia,
+      activacion_1a9: answers.activacion,
+      ya_visto: answers.yaVisto,
+    });
+    stepIndex = i + 1;
+    saveProgress();
+    playStep(stepIndex);
+  });
+
+  // -----------------------------------------------------------------------
+  // Salida de emergencia (en cualquier momento: fijación, reproductor o encuesta)
+  // -----------------------------------------------------------------------
+  function stopSession() {
+    sessionStopped = true;
+    if (fixationTimeoutId) clearTimeout(fixationTimeoutId);
+    saveProgress();
+    downloadCSV();
+    $("stoppedSummary").textContent = `Se registraron ${rows.length} de ${PROTOCOL.length} pasos antes de detener la sesión.`;
+    showScreen("screenStopped");
+  }
+  $("btnStopPlayer").addEventListener("click", stopSession);
+  $("btnStopSurvey").addEventListener("click", stopSession);
+  $("btnStopFixation").addEventListener("click", stopSession);
+
+  // -----------------------------------------------------------------------
+  // Fin de sesión + descarga
+  // -----------------------------------------------------------------------
+  function finishSession() {
+    saveProgress();
+    downloadCSV();
+    clearProgress();
+    $("doneSummary").textContent = `Se registraron los ${rows.length} pasos de la sesión.`;
+    showScreen("screenDone");
+  }
+
+  function csvCell(v) { return `"${String(v == null ? "" : v).replace(/"/g, '""')}"`; }
+
+  function downloadCSV() {
+    const header = [
+      "paso", "archivo", "codigo", "categoria", "replica",
+      "timestamp_inicio_iso", "timestamp_fin_iso",
+      "emocion_reportada", "emocion_otra_texto",
+      "intensidad_1a5", "valencia_1a9", "activacion_1a9", "ya_visto",
+    ];
+    const lines = [header.map(csvCell).join(",")];
+    for (const r of rows) {
+      lines.push(header.map((h) => csvCell(r[h])).join(","));
+    }
+    const csv = lines.join("\r\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `elicitacion_clips_${sessionId}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  $("btnDownloadAgain").addEventListener("click", downloadCSV);
+  $("btnDownloadAgainStop").addEventListener("click", downloadCSV);
+
+  checkForResume();
+})();
+</script>
+</body>
+</html>

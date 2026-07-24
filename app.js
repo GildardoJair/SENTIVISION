@@ -4,9 +4,20 @@
 // Motores de clasificación de emoción disponibles vía selector (classifierSel):
 //   - faceExpressionNet (face-api.js) — baseline original, con HAPPY_BIAS.
 //   - emotion-fusion.js (I2, heurístico) — Blendshapes + audio.
-//   - Modelo propio (I2, MLP) — entrenado sobre 52 blendshapes (ver notebook).
-// Las 3 fuentes se calculan y loguean SIEMPRE al CSV, sin importar cuál esté
-// activa, para poder comparar F1/ECE offline (Nivel 1) en cualquier momento.
+//   - Modelo propio (I2, MLP) — entrenado sobre 52 blendshapes (ver notebook),
+//     mostrado/logueado en su versión ACTIVA de producción (parche de "sad"
+//     + suavizado EMA + histéresis, ver smoothEmotionProbs/stableDominantKey),
+//     no la salida cruda — igual que lo que decide qué mostrarle a la gente
+//     cuando este motor está seleccionado.
+// Las 3 fuentes (face-api crudo, fusión, MLP activo) se calculan y loguean
+// SIEMPRE al CSV, sin importar cuál esté activa pilotando satisfacción, para
+// poder comparar accuracy/F1 offline en cualquier momento (ver protocolo de
+// elicitación con clips validados, 21 jul 2026). El MLP CRUDO (sin parche ni
+// suavizado) también se loguea aparte (columnas mlp_raw_*) — no es uno de
+// los "3 motores" mostrados en el panel, es un extra de diagnóstico interno,
+// porque perderlo hubiera hecho imposible repetir análisis como el de la
+// sesión de elicitación (que reveló el problema de histéresis) sin volver a
+// grabar sesión.
 //
 // Detección: MediaPipe FaceMesh (I1) es el detector principal — 478 landmarks
 // 3D, head pose real, blendshapes. face-api.js (tinyFaceDetector) sigue
@@ -344,9 +355,27 @@ function cropForAgeGender(box) {
 // un tiempo mínimo. Se aplica SOLO al modelo propio (MLP) — es donde se
 // observó el problema; faceExpressionNet y emotion-fusion.js usan argmax
 // directo, como siempre.
+//
+// AJUSTADO (21 jul 2026) de 0.70/600ms a 0.45/300ms — PROVISIONAL, sin
+// confirmar todavía con datos. Motivo: la sesión de elicitación con clips
+// validados (26 min, 5 emociones + neutral, ground truth real) mostró que
+// con 0.70/600ms el sistema quedaba "congelado" en Neutral el 92% del
+// tiempo — ninguna otra emoción del MLP alcanzaba 70% de confianza
+// sostenida 600ms, sin importar qué clip se estuviera viendo. No se sabe
+// todavía si el problema real era SOLO la histéresis muy estricta o si el
+// MLP en sí tiene poca señal para happy/fearful/angry en esta sesión/sujeto
+// (ver hallazgo de esa misma sesión: probabilidad promedio de la clase
+// verdadera ~2-3% para happy/fearful, rank 5-7 de 7 — la histéresis no
+// puede arreglar eso). Este cambio es el primer experimento para
+// distinguir ambas causas: se repite el protocolo de elicitación con estos
+// valores más permisivos y se compara accuracy/recall contra la sesión
+// anterior. Si mejora sustancialmente → la histéresis era el problema
+// principal. Si sigue igual de mal en happy/fearful/angry → el problema
+// está en el MLP mismo (features, entrenamiento, o domain shift), no en el
+// suavizado, y bajar más estos números no va a ayudar.
 const EMOTION_EMA_ALPHA = 0.25;
-const EMOTION_SWITCH_CONFIDENCE = 0.70;
-const EMOTION_SWITCH_HOLD_MS = 600;
+const EMOTION_SWITCH_CONFIDENCE = 0.45;
+const EMOTION_SWITCH_HOLD_MS = 300;
 
 let emotionEMA = null;
 let displayedEmotion = null;
@@ -366,7 +395,7 @@ function smoothEmotionProbs(rawProbs) {
   // recorta "sad" y se renormaliza para que las 7 probabilidades sigan
   // sumando 1 (la versión anterior de este parche NO renormalizaba).
   if (adjustedProbs.sad !== undefined) {
-    adjustedProbs.sad *= 0.40;
+    adjustedProbs.sad *= 0.20;
     const total = Object.values(adjustedProbs).reduce((a, b) => a + b, 0);
     if (total > 0) {
       for (const k of Object.keys(adjustedProbs)) adjustedProbs[k] /= total;
@@ -492,9 +521,24 @@ async function detectLoop() {
       ? window.EmotionML.classify(mesh.blendshapes)
       : null;
 
-    // Panel de comparación en vivo — los 3 motores a la vez, sin importar
-    // cuál esté "activo" abajo para satisfacción/momentos.
-    updateComparisonPanel(result ? result.expressions : null, fusionProbs, mlResult ? mlResult.probs : null);
+    // MLP ACTIVO (parche de "sad" + EMA + histéresis) — se calcula SIEMPRE
+    // que haya mlResult, sin importar si classifierSel="mlp" está elegido o
+    // no. Antes esto solo corría dentro del if(classifierChoice==="mlp"),
+    // lo que dejaba el panel de comparación y el CSV mostrando el MLP CRUDO
+    // (sin parche/suavizado) — que es justo lo que confundía "qué está
+    // pasando en producción" con "qué predice el modelo en bruto". Ahora el
+    // estado de EMA/histéresis avanza cada frame igual, independientemente
+    // de cuál motor esté pilotando satisfacción/momentos.
+    let mlpActive = null, mlpForcedDom = null;
+    if (mlResult) {
+      mlpActive = smoothEmotionProbs(mlResult.probs);
+      mlpForcedDom = stableDominantKey(mlpActive);
+    }
+
+    // Panel de comparación en vivo — los 3 motores pedidos (face-api crudo,
+    // MLP activo/final, fusión), sin importar cuál esté "activo" abajo para
+    // satisfacción/momentos.
+    updateComparisonPanel(result ? result.expressions : null, fusionProbs, mlpActive);
 
     // Edad/género: ageGenderNet sobre el recorte del box de MediaPipe. Puede
     // fallar (recorte inválido, red no lista) sin tumbar el resto del
@@ -518,9 +562,9 @@ async function detectLoop() {
     const classifierChoice = classifierSel.value; // "faceapi" | "fusion" | "mlp"
     let activeExpr = null, forcedDom = null, applyHappyBias = false, usedFusion = false, usedML = false;
 
-    if (classifierChoice === "mlp" && mlResult) {
-      activeExpr = smoothEmotionProbs(mlResult.probs);
-      forcedDom = stableDominantKey(activeExpr);
+    if (classifierChoice === "mlp" && mlpActive) {
+      activeExpr = mlpActive;
+      forcedDom = mlpForcedDom;
       usedML = true;
     } else if (classifierChoice === "fusion" && fusionProbs) {
       activeExpr = fusionProbs;
@@ -557,7 +601,9 @@ async function detectLoop() {
       }
 
       window.QualityMetrics.update(true, activeExpr, dom.raw);
-      maybeLog(dom, activeExpr, ageGenderResult, affect, pose, pos, vf, sat, af, fusionProbs, usedFusion, mlResult ? mlResult.probs : null, usedML);
+      maybeLog(dom, activeExpr, ageGenderResult, affect, pose, pos, vf, sat, af,
+        result ? result.expressions : null, fusionProbs, usedFusion,
+        mlpActive, usedML, mlResult ? mlResult.probs : null);
     } else {
       domConf.textContent = "Ninguna fuente de emoción disponible…";
       window.QualityMetrics.update(false, null, null);
@@ -583,7 +629,8 @@ async function detectLoop() {
       drawLandmarks68(ctx, result.landmarks);
     }
     window.QualityMetrics.update(true, result.expressions, dom.raw);
-    maybeLog(dom, result.expressions, null, affect, pose, pos, vf, sat, af, null, false, null, false);
+    maybeLog(dom, result.expressions, null, affect, pose, pos, vf, sat, af,
+      result.expressions, null, false, null, false, null);
   } else {
     domConf.textContent = "No se detecta rostro…";
     window.QualityMetrics.update(false, null, null);
@@ -976,7 +1023,8 @@ function drawCircumplex(v, a) {
 
 // --- Registro / CSV ---------------------------------------------------------
 
-function maybeLog(dom, expressions, ageGenderResult, affect, pose, pos, vf, sat, af, fusionProbs, usedFusion, mlProbs, usedML) {
+function maybeLog(dom, expressions, ageGenderResult, affect, pose, pos, vf, sat, af,
+  faceapiExpr, fusionProbs, usedFusion, mlProbs, usedML, mlRawProbs) {
   if (!logToggle.checked) return;
   const now = performance.now();
   const intervalMs = Number(intervalSel.value);
@@ -985,6 +1033,15 @@ function maybeLog(dom, expressions, ageGenderResult, affect, pose, pos, vf, sat,
 
   const expr = {};
   for (const key of Object.keys(EMOTIONS)) expr[key] = expressions[key] || 0;
+
+  // Los 3 motores pedidos: face-api crudo, fusión, y MLP ACTIVO (parche +
+  // suavizado) — lo que de verdad refleja "qué le mostramos a la gente"
+  // cuando cada uno está seleccionado, no una aproximación.
+  let faceapiExprLog = null;
+  if (faceapiExpr) {
+    faceapiExprLog = {};
+    for (const key of Object.keys(EMOTIONS)) faceapiExprLog[key] = faceapiExpr[key] || 0;
+  }
 
   let fusionExpr = null;
   if (fusionProbs) {
@@ -998,16 +1055,30 @@ function maybeLog(dom, expressions, ageGenderResult, affect, pose, pos, vf, sat,
     for (const key of Object.keys(EMOTIONS)) mlExpr[key] = mlProbs[key] || 0;
   }
 
+  // Respaldo de diagnóstico, NO es uno de los "3 motores" del panel — MLP
+  // crudo, sin parche de "sad" ni suavizado EMA/histéresis. Se guarda aparte
+  // para poder seguir haciendo análisis tipo elicitación (comparar contra
+  // ground truth real) sin depender de que el parche/suavizado actual sean
+  // los definitivos — si se recalibran más adelante, este dato sigue siendo
+  // válido para volver a evaluar desde cero.
+  let mlRawExpr = null;
+  if (mlRawProbs) {
+    mlRawExpr = {};
+    for (const key of Object.keys(EMOTIONS)) mlRawExpr[key] = mlRawProbs[key] || 0;
+  }
+
   emotionLog.push({
     time: new Date(),
     dominant: dom.es,
     dominantRaw: dom.raw,
     confidence: dom.conf,
     expressions: expr,
+    faceapiExpressions: faceapiExprLog,
     fusionExpressions: fusionExpr,
     usedFusion: !!usedFusion,
     mlExpressions: mlExpr,
     usedML: !!usedML,
+    mlRawExpressions: mlRawExpr,
     age: ageGenderResult ? ageGenderResult.age : null,
     gender: ageGenderResult ? (ageGenderResult.gender === "male" ? "Hombre" : "Mujer") : "—",
     genderProb: ageGenderResult ? ageGenderResult.genderProbability : null,
@@ -1087,8 +1158,10 @@ function downloadSessionCSV() {
     "voz_pitch_hz", "voz_energia", "voz_arousal", "rol_activo", "satisfaccion",
     "cuadrante", "afecto_98", "afecto_38", "positividad", "atencion", "n_rostros",
     "detection_rate", "expression_entropy", "flip_rate",
+    ...keys.map((k) => `faceapi_${k}`),
     "usa_fusion_i2", ...keys.map((k) => `fusion_${k}`),
     "usa_mlp_i2", ...keys.map((k) => `mlp_${k}`),
+    ...keys.map((k) => `mlp_raw_${k}`),
   ];
   const emoRows = emotionLog.map((r) => {
     const cells = [
@@ -1122,10 +1195,12 @@ function downloadSessionCSV() {
       r.quality && r.quality.detectionRate != null ? r.quality.detectionRate.toFixed(4) : "",
       r.quality && r.quality.entropy != null ? r.quality.entropy.toFixed(4) : "",
       r.quality && Number.isFinite(r.quality.flipRate) ? r.quality.flipRate.toFixed(2) : "",
+      ...keys.map((k) => (r.faceapiExpressions ? (r.faceapiExpressions[k] || 0).toFixed(4) : "")),
       r.usedFusion ? "1" : "0",
       ...keys.map((k) => (r.fusionExpressions ? (r.fusionExpressions[k] || 0).toFixed(4) : "")),
       r.usedML ? "1" : "0",
       ...keys.map((k) => (r.mlExpressions ? (r.mlExpressions[k] || 0).toFixed(4) : "")),
+      ...keys.map((k) => (r.mlRawExpressions ? (r.mlRawExpressions[k] || 0).toFixed(4) : "")),
     ];
     return cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",");
   });
