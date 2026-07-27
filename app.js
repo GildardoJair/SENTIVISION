@@ -1143,7 +1143,7 @@ function clearLog() {
 // por una línea marcadora — para leerlo con pandas, se parte el archivo en
 // esas líneas antes de pd.read_csv() de cada sección (te puedo dar el
 // snippet de lectura cuando lo necesites).
-function downloadSessionCSV() {
+function downloadSessionCSV(selfReport) {
   if (emotionLog.length === 0 && momentsLog.length === 0) return;
   const keys = Object.keys(EMOTIONS);
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
@@ -1222,6 +1222,42 @@ function downloadSessionCSV() {
     return cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",");
   });
 
+  // Autoevaluación: se pregunta justo al presionar "Descargar sesión
+  // completa" (ver modal en index.html + listener de csvBtn más abajo), con
+  // la persona todavía presente — en vez del flujo anterior, donde solo se
+  // marcaba después en analizar-sesion.html sin tenerla enfrente. El
+  // veredicto del sistema usa EXACTAMENTE el mismo criterio que
+  // computeVerdict() en el dashboard (promedio de satEMA de toda la sesión
+  // contra los mismos SAT_THRESHOLD_POS/NEG), para que "coincide" signifique
+  // lo mismo en las dos herramientas.
+  const SR_LABELS = { neg: "Insatisfecho", neu: "Neutro", pos: "Satisfecho" };
+  let srRows = [];
+  if (selfReport) {
+    const satAvg = satHist.length ? satHist.reduce((a, s) => a + s.s, 0) / satHist.length : null;
+    let sysVerdict = "";
+    if (satAvg !== null) {
+      sysVerdict = satAvg > SAT_THRESHOLD_POS ? "Satisfecho"
+                 : satAvg < SAT_THRESHOLD_NEG ? "Insatisfecho"
+                 : "Neutral";
+    }
+    const sysKey = sysVerdict === "Satisfecho" ? "pos" : sysVerdict === "Insatisfecho" ? "neg" : (sysVerdict ? "neu" : "");
+    const coincide = sysVerdict ? (sysKey === selfReport ? "si" : "no") : "";
+    const srHeader = ["timestamp_iso", "autoevaluacion_persona", "veredicto_sistema", "satEMA_promedio", "coincide"];
+    const srRow = [
+      new Date().toISOString(),
+      SR_LABELS[selfReport],
+      sysVerdict,
+      satAvg !== null ? satAvg.toFixed(4) : "",
+      coincide,
+    ];
+    srRows = [
+      "",
+      "### SECCION: autoevaluacion",
+      srHeader.join(","),
+      srRow.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","),
+    ];
+  }
+
   const csv = [
     "### SECCION: emociones",
     emoHeader.join(","),
@@ -1230,6 +1266,7 @@ function downloadSessionCSV() {
     "### SECCION: momentos_clave",
     momHeader.join(","),
     ...momRows,
+    ...srRows,
   ].join("\r\n");
 
   saveCSV(csv, `sesion_${stamp}.csv`);
@@ -1268,7 +1305,30 @@ function updateEmotions(expressions, forcedDominant) {
 
 startBtn.addEventListener("click", startCamera);
 stopBtn.addEventListener("click", stopCamera);
-csvBtn.addEventListener("click", downloadSessionCSV);
+// --- Modal de autoevaluación (al descargar) ---------------------------------
+const selfReportOverlay = document.getElementById("selfReportOverlay");
+const selfReportSkip = document.getElementById("selfReportSkip");
+
+function openSelfReportModal() {
+  if (emotionLog.length === 0 && momentsLog.length === 0) return; // nada que descargar
+  selfReportOverlay.style.display = "flex";
+}
+function closeSelfReportModal() {
+  selfReportOverlay.style.display = "none";
+}
+
+csvBtn.addEventListener("click", openSelfReportModal);
+
+document.querySelectorAll("#selfReportOverlay .sr-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    closeSelfReportModal();
+    downloadSessionCSV(btn.dataset.val); // "neg" | "neu" | "pos"
+  });
+});
+selfReportSkip.addEventListener("click", () => {
+  closeSelfReportModal();
+  downloadSessionCSV(null);
+});
 clearBtn.addEventListener("click", clearLog);
 roleCliente.addEventListener("click", () => setRole("cliente"));
 roleAsesor.addEventListener("click", () => setRole("asesor"));

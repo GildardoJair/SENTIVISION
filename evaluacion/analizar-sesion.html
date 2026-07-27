@@ -290,22 +290,15 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
       <h2>Cargar datos de la sesión</h2>
       <span class="hint">Nada se sube a ningún servidor — los archivos se leen directamente en tu navegador.</span>
     </div>
-    <div class="upload-grid">
-      <div class="upload-box required">
-        <span class="label">Registro de sesión <span class="tag req">requerido</span></span>
-        <input type="file" id="fileEmociones" accept=".csv" />
-        <span class="file-status" id="statusEmociones">Esperando archivo (sesion_*.csv, o emociones_*.csv si es de antes)…</span>
-      </div>
-      <div class="upload-box">
-        <span class="label">Momentos clave <span class="tag opt">opcional</span></span>
-        <input type="file" id="fileMomentos" accept=".csv" />
-        <span class="file-status" id="statusMomentos">No hace falta si ya subiste sesion_*.csv arriba — solo para momentos_clave_*.csv sueltos (formato anterior)</span>
-      </div>
+    <div class="upload-box required" style="max-width: 480px;">
+      <span class="label">Registro de sesión <span class="tag req">requerido</span></span>
+      <input type="file" id="fileEmociones" accept=".csv" />
+      <span class="file-status" id="statusEmociones">Esperando archivo (sesion_*.csv — trae emociones, momentos clave y autoevaluación juntos)…</span>
     </div>
   </section>
 
   <section class="panel" id="emptyState">
-    <p class="empty-hint">Carga el CSV que exporta la app (botón «Descargar sesión completa») para ver el análisis de la sesión — trae emociones y momentos clave juntos. Si tienes CSVs de antes (dos archivos sueltos: emociones_*.csv + momentos_clave_*.csv), también funcionan igual.</p>
+    <p class="empty-hint">Carga el CSV que exporta la app (botón «Descargar sesión completa») para ver el análisis de la sesión — trae emociones, momentos clave y autoevaluación juntos en un solo archivo.</p>
   </section>
 
   <div id="dashboard" style="display:none; flex-direction:column; gap:20px;">
@@ -526,16 +519,31 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
   // ---------------------------------------------------------------------
   const EMO_MARKER = "### SECCION: emociones";
   const MOM_MARKER = "### SECCION: momentos_clave";
+  const SR_MARKER = "### SECCION: autoevaluacion";
 
   function splitCombinedCSV(text) {
     const emoIdx = text.indexOf(EMO_MARKER);
     if (emoIdx === -1) return null;
     const momIdx = text.indexOf(MOM_MARKER);
+    const srIdx = text.indexOf(SR_MARKER);
     const emoStart = emoIdx + EMO_MARKER.length;
-    const emoEnd = momIdx === -1 ? text.length : momIdx;
+    const emoEnd = momIdx === -1 ? (srIdx === -1 ? text.length : srIdx) : momIdx;
     const emoText = text.slice(emoStart, emoEnd).trim();
-    const momText = momIdx === -1 ? "" : text.slice(momIdx + MOM_MARKER.length).trim();
-    return { emoText, momText };
+
+    let momText = "";
+    if (momIdx !== -1) {
+      const momStart = momIdx + MOM_MARKER.length;
+      const momEnd = srIdx === -1 ? text.length : srIdx;
+      momText = text.slice(momStart, momEnd).trim();
+    }
+
+    // Autoevaluación capturada en vivo en app.js (al presionar "Descargar
+    // sesión completa") — si viene incluida, se auto-carga aquí abajo para
+    // no tener que preguntarle a la persona dos veces (una en vivo, otra
+    // viendo el dashboard después).
+    const srText = srIdx === -1 ? "" : text.slice(srIdx + SR_MARKER.length).trim();
+
+    return { emoText, momText, srText };
   }
 
   function readFileText(file) {
@@ -559,8 +567,8 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
       const combined = splitCombinedCSV(text);
 
       // Formato nuevo (un solo archivo, "Descargar sesión completa"): se
-      // separan las dos secciones. Formato anterior (dos archivos sueltos):
-      // combined es null y se procesa el archivo completo como antes.
+      // separan las secciones. Formato anterior (un solo archivo de
+      // emociones sin secciones): combined es null y se procesa tal cual.
       const emoText = combined ? combined.emoText : text;
 
       const rows = rowsToObjects(parseCSV(emoText));
@@ -571,59 +579,48 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
       if (parsed.length === 0) throw new Error("El archivo no tiene filas válidas de registro de emociones");
       emoRows = parsed;
       emoFileName = file.name;
-      selfReport = null;
       document.querySelectorAll("#selfReportBtns .sr-btn").forEach((b) => b.classList.remove("active"));
-      statusEl.textContent = combined
-        ? `✓ ${parsed.length} muestras cargadas de "${file.name}" (formato combinado)`
-        : `✓ ${parsed.length} muestras cargadas de "${file.name}"`;
-      statusEl.className = "file-status ok";
 
       // El formato combinado trae también los momentos clave en el mismo
-      // archivo — se cargan de una vez, sin necesitar el segundo input.
+      // archivo — se cargan de una vez, sin necesitar un segundo input.
+      let momMsg = "";
       if (combined && combined.momText) {
-        const momStatusEl = $("statusMomentos");
         const momParsed = rowsToObjects(parseCSV(combined.momText))
           .map((r) => normalizeMomRow(r))
           .filter((r) => r.t instanceof Date && !isNaN(r.t));
         momParsed.sort((a, b) => a.t - b.t);
         momRows = momParsed;
         momFileName = file.name;
-        momStatusEl.textContent = `✓ ${momParsed.length} momentos incluidos en "${file.name}"`;
-        momStatusEl.className = "file-status ok";
+        momMsg = ` · ${momParsed.length} momento(s) clave`;
+      } else {
+        momRows = [];
+        momFileName = "";
       }
 
-      tryRender();
-    } catch (err) {
-      console.error(err);
-      statusEl.textContent = "✗ " + err.message;
-      statusEl.className = "file-status err";
-    }
-  });
-
-  $("fileMomentos").addEventListener("change", async (e) => {
-    const file = e.target.files[0];
-    const statusEl = $("statusMomentos");
-    if (!file) return;
-    try {
-      const text = await readFileText(file);
-      const combined = splitCombinedCSV(text);
-      // Por si suben aquí por error el archivo combinado nuevo en vez del
-      // momentos_clave_*.csv suelto — se extrae solo la sección que aplica.
-      const momText = combined ? combined.momText : text;
-      if (combined && !combined.momText) {
-        throw new Error('Este archivo combinado no trae sección de momentos clave (0 momentos en la sesión).');
+      // Autoevaluación capturada en vivo en app.js — si viene en el CSV, se
+      // auto-selecciona el botón correspondiente aquí, sin volver a
+      // preguntarle a la persona. Sigue siendo editable a mano después
+      // (por ejemplo, si el analista se equivocó al marcar el botón allá).
+      selfReport = null;
+      let srMsg = "";
+      if (combined && combined.srText) {
+        const srRows = rowsToObjects(parseCSV(combined.srText));
+        const srLabel = srRows[0] && srRows[0]["autoevaluacion_persona"];
+        const srKey = Object.keys(SR_LABELS).find((k) => SR_LABELS[k] === srLabel);
+        if (srKey) {
+          selfReport = srKey;
+          const btn = document.querySelector(`#selfReportBtns .sr-btn[data-val="${srKey}"]`);
+          if (btn) btn.classList.add("active");
+          srMsg = ` · autoevaluación: ${srLabel} (capturada en vivo)`;
+        }
       }
 
-      const rows = rowsToObjects(parseCSV(momText));
-      const parsed = rows
-        .map((r) => normalizeMomRow(r))
-        .filter((r) => r.t instanceof Date && !isNaN(r.t));
-      parsed.sort((a, b) => a.t - b.t);
-      if (parsed.length === 0) throw new Error("El archivo no tiene filas válidas de momentos clave");
-      momRows = parsed;
-      momFileName = file.name;
-      statusEl.textContent = `✓ ${parsed.length} momentos cargados de "${file.name}"`;
+      statusEl.textContent = combined
+        ? `✓ ${parsed.length} muestras cargadas de "${file.name}"${momMsg}${srMsg}`
+        : `✓ ${parsed.length} muestras cargadas de "${file.name}" (formato antiguo, sin momentos/autoevaluación)`;
       statusEl.className = "file-status ok";
+
+      renderSelfReportCompare();
       tryRender();
     } catch (err) {
       console.error(err);
@@ -647,6 +644,12 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
       roll: num(r["roll_deg"]),
       yaw: num(r["yaw_deg"]),
       pitch: num(r["pitch_deg"]),
+      // Edad/género: valor CRUDO por frame (no la mediana estabilizada que
+      // se ve en vivo en app.js) — puede venir vacío si ese frame no tuvo
+      // recorte válido de MediaPipe (ver nota en updateMetrics/app.js).
+      edad: num(r["edad"]),
+      genero: (r["genero"] && r["genero"] !== "—") ? r["genero"] : "",
+      generoProb: num(r["genero_prob"]),
     };
     for (const k of EMOTION_KEYS) out[k] = num(r[k]) || 0;
     return out;
@@ -798,6 +801,22 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
     const momPos = momRows.filter((m) => m.tipo === "pos").length;
     const momNeg = momRows.filter((m) => m.tipo === "neg").length;
 
+    // Edad/género: mediana (más robusta que el promedio ante lecturas
+    // sueltas ruidosas) y moda, solo sobre frames con dato válido — no todos
+    // los frames tienen recorte de MediaPipe disponible (ver normalizeEmoRow).
+    const ages = emoRows.map((r) => r.edad).filter((v) => v !== null);
+    const edadMediana = ages.length ? median(ages) : null;
+    const edadCoveragePct = n ? (ages.length / n) * 100 : 0;
+
+    const genders = emoRows.map((r) => r.genero).filter((v) => v);
+    const generoCounts = {};
+    for (const g of genders) generoCounts[g] = (generoCounts[g] || 0) + 1;
+    let generoModa = null, generoModaPct = 0;
+    for (const [g, c] of Object.entries(generoCounts)) {
+      const pct = (c / genders.length) * 100;
+      if (generoModa === null || c > generoCounts[generoModa]) { generoModa = g; generoModaPct = pct; }
+    }
+
     const stats = [
       { label: "Duración de sesión", val: fmtDuration(durationSec), sub: `${first.toLocaleTimeString("es-MX")} — ${last.toLocaleTimeString("es-MX")}` },
       { label: "Muestras registradas", val: String(n), sub: medDelta ? `~1 cada ${medDelta.toFixed(1)}s` : "" },
@@ -805,6 +824,8 @@ footer { text-align: center; padding: 10px 16px 30px; color: var(--muted); font-
       { label: "Emoción predominante", val: EMOTION_LABELS[topEmo], sub: `prob. media ${(emoAvg[topEmo] * 100).toFixed(0)}%` },
       { label: "Satisfacción promedio", val: avgSat !== null ? (avgSat >= 0 ? "+" : "") + avgSat.toFixed(2) : "—", sub: "satEMA" },
       { label: "Satisfacción final", val: finalSat !== null ? (finalSat >= 0 ? "+" : "") + finalSat.toFixed(2) : "—", sub: "" },
+      { label: "Edad estimada", val: edadMediana !== null ? `${Math.round(edadMediana)} años` : "—", sub: ages.length ? `mediana · ${edadCoveragePct.toFixed(0)}% de las muestras` : "sin datos de edad en el CSV" },
+      { label: "Género estimado", val: generoModa || "—", sub: generoModa ? `moda · ${generoModaPct.toFixed(0)}% de las muestras con dato` : "sin datos de género en el CSV" },
       { label: "Momentos positivos", val: String(momPos), sub: momRows.length ? "" : "carga momentos_clave_*.csv" },
       { label: "Momentos negativos", val: String(momNeg), sub: "" },
     ];

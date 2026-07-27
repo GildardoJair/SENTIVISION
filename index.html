@@ -5,6 +5,45 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Detector de Emociones · Webcam</title>
   <link rel="stylesheet" href="style.css" />
+  <style>
+    /* Modal de autoevaluación (al descargar CSV) — reusa las variables de
+       color de style.css; si cambian los nombres de esas variables allá,
+       actualízalos aquí también. */
+    .sr-overlay {
+      position: fixed; inset: 0; z-index: 1000;
+      background: rgba(6, 8, 18, 0.72);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .sr-modal {
+      background: var(--panel, #1a1f37);
+      border-radius: 16px;
+      padding: 26px 28px;
+      max-width: 420px;
+      width: 100%;
+      box-shadow: 0 24px 70px rgba(0,0,0,0.5);
+    }
+    .sr-modal h3 { margin: 0 0 10px; font-size: 1.15rem; }
+    .sr-modal p { margin: 0 0 18px; color: var(--muted, #9aa3c7); font-size: 0.92rem; line-height: 1.45; }
+    .sr-btns { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .sr-btn {
+      flex: 1; min-width: 110px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.14);
+      color: var(--text, #e8ebff);
+      padding: 12px 10px; border-radius: 12px;
+      font-size: 0.92rem; font-weight: 600; cursor: pointer;
+      transition: transform 0.05s ease, border-color 0.15s ease;
+    }
+    .sr-btn:hover { border-color: rgba(255,255,255,0.32); transform: translateY(-1px); }
+    .sr-btn.neg:hover, .sr-btn.neg:active { border-color: #ff6b6b; color: #ff6b6b; }
+    .sr-btn.neu:hover, .sr-btn.neu:active { border-color: var(--muted, #9aa3c7); }
+    .sr-btn.pos:hover, .sr-btn.pos:active { border-color: var(--good, #4ade80); color: var(--good, #4ade80); }
+    .sr-skip {
+      background: none; border: none; color: var(--muted, #9aa3c7);
+      font-size: 0.82rem; text-decoration: underline; cursor: pointer; padding: 4px 0;
+    }
+  </style>
   <!-- face-api.js (fork mantenido por vladmandic, con TensorFlow.js actualizado) -->
   <!-- Transitorio: solo alimenta expresiones/edad/género (ver nota en app.js loadModels) -->
   <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
@@ -99,7 +138,7 @@
       </div>
 
       <div class="metrics affect2" style="margin-top:10px;">
-        <div class="metric metric-wide"><span class="m-label">Comparación en vivo · 3 motores: face-api crudo, MLP activo/final, fusión (los 3 se registran siempre en el CSV; el MLP crudo sin parche se guarda aparte, columnas mlp_raw_*)</span><span class="m-val"></span></div>
+        <div class="metric metric-wide"><span class="m-label">Comparación en vivo · 3 motores (se registran los 3 en el CSV siempre)</span><span class="m-val"></span></div>
         <div class="metric"><span class="m-label">faceExpressionNet</span><span class="m-val" id="cmpFaceapi">—</span></div>
         <div class="metric"><span class="m-label">emotion-fusion.js</span><span class="m-val" id="cmpFusion">—</span></div>
         <div class="metric"><span class="m-label">Modelo propio (MLP)</span><span class="m-val" id="cmpMLP">—</span></div>
@@ -198,6 +237,23 @@
 
   <footer>
     <span>Modelos: MediaPipe FaceMesh (detección/pose/atención) + Modelo propio (MLP, I2) / emotion-fusion.js / FaceExpressionNet · AgeGenderNet vía recorte MediaPipe (edad/género)</span>
-  </footer>
+  </footer>  <!-- Autoevaluación: se muestra al presionar "Descargar sesión completa",
+       para preguntarle a la persona en el momento (mientras sigue presente),
+       en vez de que el analista la marque después viendo el dashboard sin
+       tenerla enfrente. Mismo criterio de 3 botones que analizar-sesion.html,
+       para que ambas herramientas hablen el mismo "idioma" de autoevaluación. -->
+  <div id="selfReportOverlay" class="sr-overlay" style="display:none;">
+    <div class="sr-modal">
+      <h3>Antes de descargar…</h3>
+      <p>Pregúntale directo a la persona: <strong>"¿cómo te sentiste con esta interacción?"</strong> y marca su respuesta.</p>
+      <div class="sr-btns">
+        <button type="button" class="sr-btn neg" data-val="neg">😟 Insatisfecho</button>
+        <button type="button" class="sr-btn neu" data-val="neu">😐 Neutro</button>
+        <button type="button" class="sr-btn pos" data-val="pos">🙂 Satisfecho</button>
+      </div>
+      <button type="button" id="selfReportSkip" class="sr-skip">Omitir y descargar sin autoevaluación</button>
+    </div>
+  </div>
+
 </body>
 </html>
